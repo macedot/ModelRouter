@@ -1,4 +1,4 @@
-.PHONY: build test run clean install uninstall tag release help cover check generate docker-build docker-test
+.PHONY: build test run clean install uninstall tag release help cover check generate docker-build docker-run
 
 # Variables
 BINARY_NAME=openmodel
@@ -31,7 +31,25 @@ help:
 	@echo ""
 	@echo "Docker targets:"
 	@echo "  docker-build   Build Docker image"
-	@echo "  docker-test    Test Docker image runs correctly"
+	@echo "  docker-run    Run Docker image (pass parameters with DOCKER_ARGS=...)"
+	@echo ""
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@echo "  build          Build the binary (default)"
+	@echo "  test           Run all tests with race detection"
+	@echo "  cover          Generate coverage report"
+	@echo "  check          Run fmt, vet, and test"
+	@echo "  run            Build and run the server"
+	@echo "  clean          Remove built binaries"
+	@echo "  install        Install to /usr/local/bin"
+	@echo "  uninstall      Remove from /usr/local/bin"
+	@echo "  tag            Create a git tag (usage: make tag VERSION=v0.1.0)"
+	@echo "  release        Create a release (tag + push tag)"
+	@echo ""
+	@echo "Docker targets:"
+	@echo "  docker-build   Build Docker image"
+	@echo "  docker-run     Run Docker image (pass parameters with DOCKER_ARGS=...)"
 	@echo ""
 
 # Build the binary
@@ -156,6 +174,6 @@ docker-build:
 	docker build --build-arg VERSION=$(or $(VERSION),$(GIT_VERSION)) -t $(DOCKER_IMAGE):$(or $(VERSION),$(GIT_VERSION)) .
 	@echo "Image built: $(DOCKER_IMAGE):$(or $(VERSION),$(GIT_VERSION))"
 
-docker-test:
-	@echo "Testing Docker image..."
-	docker run --rm $(DOCKER_IMAGE):$(or $(VERSION),$(GIT_VERSION)) -h
+docker-run:
+	@echo "Running Docker image..."
+	docker run --rm $(DOCKER_IMAGE):$(or $(VERSION),$(GIT_VERSION)) $(DOCKER_ARGS)
