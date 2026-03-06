@@ -24,9 +24,10 @@ func TestParseLevel(t *testing.T) {
 		{"INFO uppercase", "INFO", false, slog.LevelInfo},
 		{"WARN uppercase", "WARN", false, slog.LevelWarn},
 		{"ERROR uppercase", "ERROR", false, slog.LevelError},
+		{"trace lowercase", "trace", false, slogLevelTrace},
 		{"invalid level", "invalid", true, 0},
 		{"empty string", "", true, 0},
-		{"random string", "trace", true, 0},
+		{"random string", "random", true, 0},
 	}
 
 	for _, tt := range tests {
@@ -156,6 +157,10 @@ func TestLoggingMethods(t *testing.T) {
 		Error("test error message", "key", "value")
 	})
 
+	t.Run("Trace logs without panic", func(t *testing.T) {
+		Trace("test trace message", "key", "value")
+	})
+
 	t.Run("DebugContext logs without panic", func(t *testing.T) {
 		ctx := context.Background()
 		DebugContext(ctx, "test debug context", "key", "value")
@@ -174,6 +179,11 @@ func TestLoggingMethods(t *testing.T) {
 	t.Run("ErrorContext logs without panic", func(t *testing.T) {
 		ctx := context.Background()
 		ErrorContext(ctx, "test error context", "key", "value")
+	})
+
+	t.Run("TraceContext logs without panic", func(t *testing.T) {
+		ctx := context.Background()
+		TraceContext(ctx, "test trace context", "key", "value")
 	})
 
 	t.Run("multiple args", func(t *testing.T) {

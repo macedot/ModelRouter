@@ -2,9 +2,11 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,21 +32,29 @@ func setupStreamHeaders(w http.ResponseWriter) http.Flusher {
 }
 
 // writeSSEChunk writes a data chunk in SSE format with flush
-func writeSSEChunk(w http.ResponseWriter, flusher http.Flusher, data []byte) {
-	w.Write([]byte("data: "))
-	w.Write(data)
-	w.Write([]byte("\n\n"))
-	if flusher != nil {
-		flusher.Flush()
+func writeSSEChunk(w http.ResponseWriter, flusher http.Flusher, data []byte) error {
+	if _, err := w.Write([]byte("data: ")); err != nil {
+		return err
 	}
+	if _, err := w.Write(data); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte("\n\n")); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
 }
 
 // writeSSEDone writes the SSE [DONE] message with flush
-func writeSSEDone(w http.ResponseWriter, flusher http.Flusher) {
-	w.Write([]byte("data: [DONE]\n\n"))
+func writeSSEDone(w http.ResponseWriter, flusher http.Flusher) error {
+	if _, err := w.Write([]byte("data: [DONE]\n\n")); err != nil {
+		return err
+	}
 	if flusher != nil {
 		flusher.Flush()
 	}
+	return nil
 }
 
 // handleError writes an error response
@@ -58,24 +68,30 @@ func handleError(w http.ResponseWriter, message string, statusCode int) {
 
 // handleRoot handles GET /
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]string{
+	encodeJSON(w, map[string]string{
 		"name":    "openmodel",
 		"version": "0.1.0",
 		"status":  "running",
-	}); err != nil {
-		logger.Error("Failed to encode root response", "error", err)
+	})
+}
+
+// handleHealth handles GET /health
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
 	}
+	w.WriteHeader(http.StatusOK)
+	encodeJSON(w, map[string]string{
+		"status": "ok",
+	})
 }
 
 // handleV1Models handles GET /v1/models
 func (s *Server) handleV1Models(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
@@ -85,49 +101,45 @@ func (s *Server) handleV1Models(w http.ResponseWriter, r *http.Request) {
 		models = append(models, openai.NewModel(modelName, "openmodel"))
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(openai.ModelList{
+	encodeJSON(w, openai.ModelList{
 		Object: "list",
 		Data:   models,
-	}); err != nil {
-		logger.Error("Failed to encode models response", "error", err)
-	}
+	})
 }
 
 // handleV1Model handles GET and DELETE /v1/models/{model}
 func (s *Server) handleV1Model(w http.ResponseWriter, r *http.Request) {
-	modelName := r.URL.Path[len("/v1/models/"):]
+	prefix := "/v1/models/"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		handleError(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	modelName := r.URL.Path[len(prefix):]
 	if modelName == "" {
-		http.Error(w, "model name required", http.StatusBadRequest)
+		handleError(w, "model name required", http.StatusBadRequest)
 		return
 	}
 
 	// Check if model exists
 	if _, exists := s.config.Models[modelName]; !exists {
-		http.Error(w, "model not found", http.StatusNotFound)
+		handleError(w, modelNotFoundError(modelName).Error(), http.StatusNotFound)
 		return
 	}
 
 	switch r.Method {
 	case http.MethodGet:
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(openai.NewModel(modelName, "openmodel")); err != nil {
-			logger.Error("Failed to encode model response", "error", err)
-		}
+		encodeJSON(w, openai.NewModel(modelName, "openmodel"))
 	case http.MethodDelete:
 		// DELETE /v1/models/{model} - for fine-tuned model deletion
 		// For proxy, return success (model deletion is proxy-level operation)
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		encodeJSON(w, map[string]interface{}{
 			"id":      modelName,
 			"object":  "model",
 			"deleted": true,
-		}); err != nil {
-			logger.Error("Failed to encode delete response", "error", err)
-		}
+		})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		handleError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -135,85 +147,60 @@ func (s *Server) handleV1Model(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		// GET /v1/chat/completions - list stored completions (returns empty for proxy)
 		s.handleV1ChatCompletionsList(w, r)
 		return
 	case http.MethodPost:
 		// POST /v1/chat/completions - create completion
-		break
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req openai.ChatCompletionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		handleError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Validate request
-	if err := validateChatRequest(&req); err != nil {
-		handleError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	providers, exists := s.config.Models[req.Model]
-	if !exists {
-		handleError(w, fmt.Sprintf("model %q not found", req.Model), http.StatusNotFound)
-		return
-	}
-
-	threshold := s.config.Thresholds.FailuresBeforeSwitch
-	var lastErr error
-
-	for _, p := range providers {
-		providerKey := formatProviderKey(p)
-
-		if !s.state.IsAvailable(providerKey, threshold) {
-			continue
-		}
-
-		prov, exists := s.providers[p.Provider]
-		if !exists {
-			continue
-		}
-
-		if req.Stream {
-			s.streamV1ChatCompletions(w, r, prov, p.Model, providerKey, req.Model, req.Messages, &req, threshold)
+		var req openai.ChatCompletionRequest
+		if !readAndValidateRequest(w, r, 50*1024*1024, openai.ValidateChatCompletionRequest, &req) {
 			return
 		}
 
-		resp, err := prov.Chat(r.Context(), p.Model, req.Messages, &req)
+		// Check if model exists before trying providers
+		if _, exists := s.config.Models[req.Model]; !exists {
+			handleError(w, modelNotFoundError(req.Model).Error(), http.StatusNotFound)
+			return
+		}
+
+		threshold := s.config.Thresholds.FailuresBeforeSwitch
+
+		if req.Stream {
+			// For streaming, find provider and delegate to streaming handler
+			prov, providerKey, providerModel, err := s.findProviderWithFailover(req.Model, threshold)
+			if err != nil {
+				s.handleAllProvidersFailed(w, err)
+				return
+			}
+			*r = *r.WithContext(setProviderContext(r.Context(), providerKey, req.Model))
+			s.streamV1ChatCompletions(w, r, prov, providerModel, providerKey, req.Model, req.Messages, &req, threshold)
+			return
+		}
+
+		resp, providerKey, err := s.executeWithFailover(r, req.Model, threshold,
+			func(ctx context.Context, prov provider.Provider, providerModel string) (any, error) {
+				return prov.Chat(ctx, providerModel, req.Messages, &req)
+			},
+		)
 		if err != nil {
-			logger.Error("Chat failed", "provider", providerKey, "error", err)
-			lastErr = err
-			s.state.RecordFailure(providerKey, threshold)
-			continue
+			s.handleAllProvidersFailed(w, err)
+			return
 		}
 
-		s.state.ResetModel(providerKey)
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			logger.Error("Failed to encode chat response", "error", err)
-		}
+		s.handleProviderSuccess(w, providerKey, resp)
 		return
+	default:
+		handleError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-
-	s.handleAllProvidersFailed(w, lastErr)
 }
 
 // handleV1ChatCompletionsList handles GET /v1/chat/completions
 // Returns an empty list for proxy since we don't store completions
 func (s *Server) handleV1ChatCompletionsList(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+	encodeJSON(w, map[string]interface{}{
 		"object": "list",
 		"data":   []interface{}{},
-	}); err != nil {
-		logger.Error("Failed to encode completions list response", "error", err)
-	}
+	})
 }
 
 // streamV1ChatCompletions streams chat completions in OpenAI SSE format
@@ -226,114 +213,128 @@ func (s *Server) streamV1ChatCompletions(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	flusher := setupStreamHeaders(w)
-
 	completionID := "chatcmpl-" + uuid.New().String()[:8]
 	created := time.Now().Unix()
 
-	for resp := range stream {
-		// Check if client disconnected
-		select {
-		case <-r.Context().Done():
-			logger.Info("Client disconnected, closing stream", "provider", providerKey)
-			return
-		default:
-		}
+	s.streamCommon(w, r, providerKey, requestModel, threshold, completionID, func(flusher http.Flusher) bool {
+		for resp := range stream {
+			// Check if client disconnected
+			if checkClientDisconnect(r) {
+				logger.Info("Client disconnected, closing stream", "provider", providerKey)
+				s.state.RecordFailure(providerKey, threshold)
+				return false
+			}
 
-		choices := make([]openai.ChatCompletionChunkChoice, len(resp.Choices))
-		for i, c := range resp.Choices {
-			choices[i] = openai.ChatCompletionChunkChoice{
-				Index: c.Index,
-				Delta: openai.ChatCompletionDelta{
-					Role:    c.Message.Role,
-					Content: c.Message.Content,
-				},
-				FinishReason: func() *string { s := c.FinishReason; return &s }(),
+			choices := make([]openai.ChatCompletionChunkChoice, len(resp.Choices))
+			for i, c := range resp.Choices {
+				var role, content string
+				if c.Delta != nil {
+					role = c.Delta.Role
+					content = c.Delta.Content
+				}
+				choices[i] = openai.ChatCompletionChunkChoice{
+					Index: c.Index,
+					Delta: openai.ChatCompletionDelta{
+						Role:    role,
+						Content: content,
+					},
+					FinishReason: func() *string { s := c.FinishReason; return &s }(),
+				}
+			}
+			chunk := openai.ChatCompletionChunk{
+				ID:      completionID,
+				Object:  "chat.completion.chunk",
+				Created: created,
+				Model:   requestModel,
+				Choices: choices,
+			}
+
+			data, err := json.Marshal(chunk)
+			if err != nil {
+				logger.Error("Failed to marshal stream chunk", "provider", providerKey, "error", err)
+				continue
+			}
+			if err := writeSSEChunk(w, flusher, data); err != nil {
+				logger.Error("Failed to write stream chunk", "provider", providerKey, "error", err)
+				s.state.RecordFailure(providerKey, threshold)
+				return false
 			}
 		}
-		chunk := openai.ChatCompletionChunk{
-			ID:      completionID,
-			Object:  "chat.completion.chunk",
-			Created: created,
-			Model:   requestModel,
-			Choices: choices,
-		}
+		return true
+	})
 
-		data, err := json.Marshal(chunk)
-		if err != nil {
-			logger.Error("Failed to marshal stream chunk", "provider", providerKey, "error", err)
-			continue
-		}
-		writeSSEChunk(w, flusher, data)
-	}
-
-	writeSSEDone(w, flusher)
-
-	s.state.ResetModel(providerKey)
+	// Drain remaining messages to unblock provider goroutine
+	defer drainStream(stream)
 }
 
 // handleV1Completions handles POST /v1/completions
 func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
+	// Note: CompletionRequest uses ChatCompletionRequest structure under the hood
+	// We validate by decoding and checking required fields manually
+	// since we don't have a raw-bytes validator for completions
 	var req openai.CompletionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		handleError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+	if !readAndValidateRequest(w, r, 50*1024*1024, nil, &req) {
 		return
 	}
 
-	// Validate request
-	if err := validateCompletionRequest(&req); err != nil {
-		handleError(w, err.Error(), http.StatusBadRequest)
+	// Manual validation for completion request
+	if req.Model == "" {
+		handleError(w, "model is required", http.StatusBadRequest)
 		return
 	}
+	if req.Prompt == nil {
+		handleError(w, "prompt is required", http.StatusBadRequest)
+		return
+	}
+	// Check if prompt is empty string or empty array
+	switch p := req.Prompt.(type) {
+	case string:
+		if p == "" {
+			handleError(w, "prompt cannot be empty", http.StatusBadRequest)
+			return
+		}
+	case []any:
+		if len(p) == 0 {
+			handleError(w, "prompt array cannot be empty", http.StatusBadRequest)
+			return
+		}
+	}
 
-	providers, exists := s.config.Models[req.Model]
-	if !exists {
-		handleError(w, fmt.Sprintf("model %q not found", req.Model), http.StatusNotFound)
+	// Check if model exists before trying providers
+	if _, exists := s.config.Models[req.Model]; !exists {
+		handleError(w, modelNotFoundError(req.Model).Error(), http.StatusNotFound)
 		return
 	}
 
 	threshold := s.config.Thresholds.FailuresBeforeSwitch
-	var lastErr error
 
-	for _, p := range providers {
-		providerKey := formatProviderKey(p)
-
-		if !s.state.IsAvailable(providerKey, threshold) {
-			continue
-		}
-
-		prov, exists := s.providers[p.Provider]
-		if !exists {
-			continue
-		}
-
-		if req.Stream {
-			s.streamV1Completions(w, r, prov, p.Model, providerKey, req.Model, &req, threshold)
+	if req.Stream {
+		// For streaming, find provider and delegate to streaming handler
+		prov, providerKey, providerModel, err := s.findProviderWithFailover(req.Model, threshold)
+		if err != nil {
+			s.handleAllProvidersFailed(w, err)
 			return
 		}
-
-		resp, err := prov.Complete(r.Context(), p.Model, &req)
-		if err != nil {
-			logger.Error("Complete failed", "provider", providerKey, "error", err)
-			lastErr = err
-			s.state.RecordFailure(providerKey, threshold)
-			continue
-		}
-
-		s.state.ResetModel(providerKey)
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			logger.Error("Failed to encode completion response", "error", err)
-		}
+		*r = *r.WithContext(setProviderContext(r.Context(), providerKey, req.Model))
+		s.streamV1Completions(w, r, prov, providerModel, providerKey, req.Model, &req, threshold)
 		return
 	}
 
-	s.handleAllProvidersFailed(w, lastErr)
+	resp, providerKey, err := s.executeWithFailover(r, req.Model, threshold,
+		func(ctx context.Context, prov provider.Provider, providerModel string) (any, error) {
+			return prov.Complete(ctx, providerModel, &req)
+		},
+	)
+	if err != nil {
+		s.handleAllProvidersFailed(w, err)
+		return
+	}
+
+	s.handleProviderSuccess(w, providerKey, resp)
 }
 
 // streamV1Completions streams completions in SSE format
@@ -346,166 +347,83 @@ func (s *Server) streamV1Completions(w http.ResponseWriter, r *http.Request, pro
 		return
 	}
 
-	flusher := setupStreamHeaders(w)
-
 	completionID := "cmpl-" + uuid.New().String()[:8]
 	created := time.Now().Unix()
 
-	for resp := range stream {
-		// Check if client disconnected
-		select {
-		case <-r.Context().Done():
-			logger.Info("Client disconnected, closing stream", "provider", providerKey)
-			return
-		default:
+	s.streamCommon(w, r, providerKey, requestModel, threshold, completionID, func(flusher http.Flusher) bool {
+		for resp := range stream {
+			// Check if client disconnected
+			if checkClientDisconnect(r) {
+				logger.Info("Client disconnected, closing stream", "provider", providerKey)
+				s.state.RecordFailure(providerKey, threshold)
+				return false
+			}
+
+			resp.ID = completionID
+			resp.Created = created
+			resp.Model = requestModel
+
+			data, err := json.Marshal(resp)
+			if err != nil {
+				logger.Error("Failed to marshal stream chunk", "provider", providerKey, "error", err)
+				continue
+			}
+			if err := writeSSEChunk(w, flusher, data); err != nil {
+				logger.Error("Failed to write stream chunk", "provider", providerKey, "error", err)
+				s.state.RecordFailure(providerKey, threshold)
+				return false
+			}
 		}
+		return true
+	})
 
-		resp.ID = completionID
-		resp.Created = created
-		resp.Model = requestModel
-
-		data, err := json.Marshal(resp)
-		if err != nil {
-			logger.Error("Failed to marshal stream chunk", "provider", providerKey, "error", err)
-			continue
-		}
-		writeSSEChunk(w, flusher, data)
-	}
-
-	writeSSEDone(w, flusher)
-
-	s.state.ResetModel(providerKey)
+	// Drain remaining messages to unblock provider goroutine
+	defer drainStream(stream)
 }
 
 // handleV1Embeddings handles POST /v1/embeddings
 func (s *Server) handleV1Embeddings(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	var req openai.EmbeddingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		handleError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+	if !readAndValidateRequest(w, r, 50*1024*1024, openai.ValidateEmbeddingRequest, &req) {
 		return
 	}
 
-	// Validate request
-	if err := validateEmbeddingRequest(&req); err != nil {
-		handleError(w, err.Error(), http.StatusBadRequest)
+	// Additional validation: check for empty input (not covered by spec validator)
+	if req.Input == "" {
+		handleError(w, "input cannot be empty", http.StatusBadRequest)
+		return
+	}
+	if arr, ok := req.Input.([]any); ok && len(arr) == 0 {
+		handleError(w, "input array cannot be empty", http.StatusBadRequest)
 		return
 	}
 
-	providers, exists := s.config.Models[req.Model]
-	if !exists {
-		handleError(w, fmt.Sprintf("model %q not found", req.Model), http.StatusNotFound)
+	// Check if model exists before trying providers
+	if _, exists := s.config.Models[req.Model]; !exists {
+		handleError(w, modelNotFoundError(req.Model).Error(), http.StatusNotFound)
 		return
 	}
-
-	threshold := s.config.Thresholds.FailuresBeforeSwitch
-	var lastErr error
 
 	// Convert input to string slice
 	input := convertInputToSlice(req.Input)
 
-	for _, p := range providers {
-		providerKey := formatProviderKey(p)
+	threshold := s.config.Thresholds.FailuresBeforeSwitch
 
-		if !s.state.IsAvailable(providerKey, threshold) {
-			continue
-		}
-
-		prov, exists := s.providers[p.Provider]
-		if !exists {
-			continue
-		}
-
-		resp, err := prov.Embed(r.Context(), p.Model, input)
-		if err != nil {
-			logger.Error("Embed failed", "provider", providerKey, "error", err)
-			lastErr = err
-			s.state.RecordFailure(providerKey, threshold)
-			continue
-		}
-
-		s.state.ResetModel(providerKey)
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			logger.Error("Failed to encode embedding response", "error", err)
-		}
+	resp, providerKey, err := s.executeWithFailover(r, req.Model, threshold,
+		func(ctx context.Context, prov provider.Provider, providerModel string) (any, error) {
+			return prov.Embed(ctx, providerModel, input)
+		},
+	)
+	if err != nil {
+		s.handleAllProvidersFailed(w, err)
 		return
 	}
 
-	s.handleAllProvidersFailed(w, lastErr)
-}
-
-// validateChatRequest validates a chat completion request
-func validateChatRequest(req *openai.ChatCompletionRequest) error {
-	if req.Model == "" {
-		return fmt.Errorf("model is required")
-	}
-	if len(req.Messages) == 0 {
-		return fmt.Errorf("messages array cannot be empty")
-	}
-	validRoles := map[string]bool{
-		"system":    true,
-		"user":      true,
-		"assistant": true,
-		"tool":      true,
-	}
-	for i, msg := range req.Messages {
-		if msg.Role == "" {
-			return fmt.Errorf("message role is required at index %d", i)
-		}
-		if !validRoles[msg.Role] {
-			return fmt.Errorf("invalid message role %q at index %d", msg.Role, i)
-		}
-	}
-	return nil
-}
-
-// validateCompletionRequest validates a completion request
-func validateCompletionRequest(req *openai.CompletionRequest) error {
-	if req.Model == "" {
-		return fmt.Errorf("model is required")
-	}
-	if req.Prompt == nil {
-		return fmt.Errorf("prompt is required")
-	}
-	// Check if prompt is empty string or empty array
-	switch p := req.Prompt.(type) {
-	case string:
-		if p == "" {
-			return fmt.Errorf("prompt cannot be empty")
-		}
-	case []any:
-		if len(p) == 0 {
-			return fmt.Errorf("prompt array cannot be empty")
-		}
-	}
-	return nil
-}
-
-// validateEmbeddingRequest validates an embedding request
-func validateEmbeddingRequest(req *openai.EmbeddingRequest) error {
-	if req.Model == "" {
-		return fmt.Errorf("model is required")
-	}
-	if req.Input == nil {
-		return fmt.Errorf("input is required")
-	}
-	// Check if input is empty
-	switch inp := req.Input.(type) {
-	case string:
-		if inp == "" {
-			return fmt.Errorf("input cannot be empty")
-		}
-	case []any:
-		if len(inp) == 0 {
-			return fmt.Errorf("input array cannot be empty")
-		}
-	}
-	return nil
+	s.handleProviderSuccess(w, providerKey, resp)
 }
 
 // convertInputToSlice converts embedding input to string slice
@@ -531,7 +449,6 @@ func (s *Server) handleAllProvidersFailed(w http.ResponseWriter, lastErr error) 
 	timeout := s.state.GetProgressiveTimeout()
 	s.state.IncrementTimeout(s.config.Thresholds.MaxTimeout)
 
-	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", fmt.Sprintf("%d", timeout/1000))
 	w.WriteHeader(http.StatusServiceUnavailable)
 
@@ -539,7 +456,5 @@ func (s *Server) handleAllProvidersFailed(w http.ResponseWriter, lastErr error) 
 	if lastErr != nil {
 		errMsg = lastErr.Error()
 	}
-	if err := json.NewEncoder(w).Encode(map[string]string{"error": errMsg}); err != nil {
-		logger.Error("Failed to encode error response", "error", err)
-	}
+	encodeJSON(w, map[string]string{"error": errMsg})
 }

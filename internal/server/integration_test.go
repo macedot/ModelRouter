@@ -218,7 +218,7 @@ func TestV1ChatCompletionsStreaming(t *testing.T) {
 				Choices: []openai.ChatCompletionChoice{
 					{
 						Index: 0,
-						Message: &openai.ChatCompletionMessage{
+						Delta: &openai.ChatCompletionDelta{
 							Role:    "assistant",
 							Content: "Hello",
 						},
@@ -233,7 +233,7 @@ func TestV1ChatCompletionsStreaming(t *testing.T) {
 				Choices: []openai.ChatCompletionChoice{
 					{
 						Index: 0,
-						Message: &openai.ChatCompletionMessage{
+						Delta: &openai.ChatCompletionDelta{
 							Role:    "assistant",
 							Content: " there!",
 						},
@@ -813,8 +813,8 @@ func TestValidationEmbeddingsNilInput(t *testing.T) {
 func TestProviderFailover(t *testing.T) {
 	// First provider fails, second provider succeeds
 	firstProvider := &mockProvider{
-		nameVal:  "first",
-		chatErr:  fmt.Errorf("first provider failed"),
+		nameVal: "first",
+		chatErr: fmt.Errorf("first provider failed"),
 	}
 	secondProvider := &mockProvider{
 		nameVal: "second",

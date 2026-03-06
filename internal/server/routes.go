@@ -8,6 +8,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Root endpoint
 	mux.HandleFunc("/", s.handleRoot)
 
+	// Health endpoint
+	mux.HandleFunc("/health", s.handleHealth)
+
 	// OpenAI-compatible API endpoints
 	mux.HandleFunc("/v1/models", s.handleV1Models)
 	mux.HandleFunc("/v1/models/", s.handleV1Model)

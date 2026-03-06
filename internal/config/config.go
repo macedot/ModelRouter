@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -52,13 +54,45 @@ type configWithSchema struct {
 	Schema string `json:"$schema"`
 }
 
+// SchemaCache caches compiled JSON schemas
+type SchemaCache struct {
+	mu        sync.RWMutex
+	compilers map[string]*jsonschema.Compiler
+}
+
+var (
+	// Global schema cache instance
+	schemaCache = &SchemaCache{
+		compilers: make(map[string]*jsonschema.Compiler),
+	}
+)
+
 func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
+	// Check cache first (read lock)
+	schemaCache.mu.RLock()
+	if compiler, exists := schemaCache.compilers[schemaURL]; exists {
+		schemaCache.mu.RUnlock()
+		return compiler, nil
+	}
+	schemaCache.mu.RUnlock()
+
+	// Acquire write lock and double-check
+	schemaCache.mu.Lock()
+	defer schemaCache.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if compiler, exists := schemaCache.compilers[schemaURL]; exists {
+		return compiler, nil
+	}
+
+	// Compile new schema
 	compiler := jsonschema.NewCompiler()
 
 	var schemaData any
 
 	if strings.HasPrefix(schemaURL, "http://") || strings.HasPrefix(schemaURL, "https://") {
-		resp, err := http.Get(schemaURL)
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Get(schemaURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch schema: %w", err)
 		}
@@ -94,6 +128,9 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 		return nil, fmt.Errorf("failed to add schema: %w", err)
 	}
 
+	// Store in cache
+	schemaCache.compilers[schemaURL] = compiler
+
 	return compiler, nil
 }
 
@@ -101,7 +138,7 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port: 11435,
+			Port: 12345,
 			Host: "localhost",
 		},
 		Providers: map[string]ProviderConfig{
@@ -193,35 +230,54 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
+	return parseConfig(data, true)
+}
+
+// LoadFromPath loads configuration from a specific path
+func LoadFromPath(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	// Skip schema validation for custom paths
+	return parseConfig(data, false)
+}
+
+// parseConfig parses configuration data with optional schema validation
+func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 	// Extract $schema field
 	var schemaConfig configWithSchema
 	if err := json.Unmarshal(data, &schemaConfig); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	// Validate schema is present
-	if schemaConfig.Schema == "" {
+	// Validate schema is present if validation is enabled
+	if validateSchema && schemaConfig.Schema == "" {
 		return nil, fmt.Errorf("config file must contain $schema field")
 	}
 
-	// Get schema compiler
-	compiler, err := getSchemaCompiler(schemaConfig.Schema)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load schema: %w", err)
-	}
+	// Validate schema if enabled
+	if validateSchema {
+		// Get schema compiler
+		compiler, err := getSchemaCompiler(schemaConfig.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load schema: %w", err)
+		}
 
-	compiledSchema, err := compiler.Compile(schemaConfig.Schema)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compile schema: %w", err)
-	}
+		compiledSchema, err := compiler.Compile(schemaConfig.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile schema: %w", err)
+		}
 
-	// Validate config against schema
-	var configData any
-	if err := json.Unmarshal(data, &configData); err != nil {
-		return nil, fmt.Errorf("failed to parse config data: %w", err)
-	}
-	if err := compiledSchema.Validate(configData); err != nil {
-		return nil, fmt.Errorf("config validation failed: %w", err)
+		// Validate config against schema
+		var configData any
+		if err := json.Unmarshal(data, &configData); err != nil {
+			return nil, fmt.Errorf("failed to parse config data: %w", err)
+		}
+		if err := compiledSchema.Validate(configData); err != nil {
+			return nil, fmt.Errorf("config validation failed: %w", err)
+		}
 	}
 
 	// Parse full config
@@ -242,27 +298,6 @@ func Load() (*Config, error) {
 	}
 	if format := os.Getenv("OPENMODEL_LOG_FORMAT"); format != "" {
 		cfg.LogFormat = format
-	}
-
-	return cfg, nil
-}
-
-// LoadFromPath loads configuration from a specific path
-func LoadFromPath(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
-	}
-
-	cfg := DefaultConfig()
-	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
-	}
-
-	// Expand environment variables in all provider configs
-	for name, provider := range cfg.Providers {
-		expandProviderEnvVars(&provider)
-		cfg.Providers[name] = provider
 	}
 
 	return cfg, nil

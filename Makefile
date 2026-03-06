@@ -1,12 +1,15 @@
-.PHONY: build test run clean install tag release help cover check generate
+.PHONY: build test run clean install uninstall tag release help cover check generate docker-build docker-test
 
 # Variables
 BINARY_NAME=openmodel
-VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_DIR=.
 CMD_DIR=./cmd
 GO:=$(shell which go)
 GOFLAGS=-v
+DOCKER_IMAGE=ghcr.io/macedot/openmodel
+
+# Get git version for builds
+GIT_VERSION:=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 # Default target
 help:
@@ -15,21 +18,26 @@ help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@echo "  build     Build the binary (default)"
-	@echo "  test      Run all tests with race detection"
-	@echo "  cover     Generate coverage report"
-	@echo "  check     Run fmt, vet, and test"
-	@echo "  run       Build and run the server"
-	@echo "  clean     Remove built binaries"
-	@echo "  install   Install to /usr/local/bin"
-	@echo "  tag       Create a git tag (usage: make tag VERSION=v0.1.0)"
-	@echo "  release   Create a release (tag + push tag)"
+	@echo "  build          Build the binary (default)"
+	@echo "  test           Run all tests with race detection"
+	@echo "  cover          Generate coverage report"
+	@echo "  check          Run fmt, vet, and test"
+	@echo "  run            Build and run the server"
+	@echo "  clean          Remove built binaries"
+	@echo "  install        Install to /usr/local/bin"
+	@echo "  uninstall      Remove from /usr/local/bin"
+	@echo "  tag            Create a git tag (usage: make tag VERSION=v0.1.0)"
+	@echo "  release        Create a release (tag + push tag)"
+	@echo ""
+	@echo "Docker targets:"
+	@echo "  docker-build   Build Docker image"
+	@echo "  docker-test    Test Docker image runs correctly"
 	@echo ""
 
 # Build the binary
 build:
 	@echo "Building $(BINARY_NAME)..."
-	$(GO) build $(GOFLAGS) -ldflags="-s -w -X main.version=$(VERSION)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	$(GO) build $(GOFLAGS) -ldflags="-s -w -X main.Version=$(or $(VERSION),$(GIT_VERSION)) -X main.BuildDate=$(shell date -u +%Y-%m-%d)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
 
 # Run all tests
 test:
@@ -61,13 +69,25 @@ clean:
 # Install to system
 install:
 	@echo "Building $(BINARY_NAME)..."
-	$(GO) build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	$(GO) build -ldflags="-s -w -X main.Version=$(or $(VERSION),$(GIT_VERSION)) -X main.BuildDate=$(shell date -u +%Y-%m-%d)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
 	@echo "Installing $(BINARY_NAME) to /usr/local/bin..."
 	@if [ -w /usr/local/bin ]; then \
 		install -m 755 $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/; \
 	else \
 		echo "Using sudo for installation..."; \
 		sudo install -m 755 $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/; \
+	fi
+
+# Uninstall from system
+uninstall:
+	@echo "Uninstalling $(BINARY_NAME) from /usr/local/bin..."
+	@if [ -w /usr/local/bin ]; then \
+		rm -f /usr/local/bin/$(BINARY_NAME); \
+		echo "Uninstalled successfully"; \
+	else \
+		echo "Using sudo for uninstallation..."; \
+		sudo rm -f /usr/local/bin/$(BINARY_NAME); \
+		echo "Uninstalled successfully"; \
 	fi
 
 # Create a git tag
@@ -129,3 +149,13 @@ download-spec:
 test-spec:
 	@echo "Running spec compliance tests..."
 	$(GO) test -v -run "SpecCompliance|BackwardCompatibility" ./internal/api/openai/...
+
+# Docker targets
+docker-build:
+	@echo "Building Docker image..."
+	docker build --build-arg VERSION=$(or $(VERSION),$(GIT_VERSION)) -t $(DOCKER_IMAGE):$(or $(VERSION),$(GIT_VERSION)) .
+	@echo "Image built: $(DOCKER_IMAGE):$(or $(VERSION),$(GIT_VERSION))"
+
+docker-test:
+	@echo "Testing Docker image..."
+	docker run --rm $(DOCKER_IMAGE):$(or $(VERSION),$(GIT_VERSION)) -h

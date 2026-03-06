@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/config.schema.json",
   "server": {
-    "port": 11435,
+    "port": 12345,
     "host": "localhost"
   },
   "providers": {
@@ -12,6 +12,10 @@
     "openai": {
       "url": "https://api.openai.com/v1",
       "apiKey": "${OPENAI_API_KEY}"
+    },
+    "ollama": {
+      "url": "http://127.0.0.1:11434/v1",
+      "apiKey": ""
     }
   },
   "models": {
@@ -23,6 +27,9 @@
     ],
     "llama2": [
       { "provider": "local", "model": "llama2" }
+    ],
+    "llama3": [
+      { "provider": "ollama", "model": "llama3" }
     ]
   },
   "thresholds": {

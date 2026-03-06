@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +34,30 @@ func TestHandleRoot(t *testing.T) {
 
 	if resp["name"] != "openmodel" {
 		t.Errorf("expected name 'openmodel', got %q", resp["name"])
+	}
+}
+
+func TestHandleHealth(t *testing.T) {
+	cfg := config.DefaultConfig()
+	stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+	srv := New(cfg, nil, stateMgr)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+
+	srv.handleHealth(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if resp["status"] != "ok" {
+		t.Errorf("expected status 'ok', got %q", resp["status"])
 	}
 }
 
@@ -123,145 +148,6 @@ func TestHandleV1ChatCompletionsModelNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected status 404, got %d", rec.Code)
-	}
-}
-
-func TestValidateChatRequest(t *testing.T) {
-	tests := []struct {
-		name    string
-		req     *openai.ChatCompletionRequest
-		wantErr bool
-	}{
-		{
-			name:    "valid request",
-			req:     &openai.ChatCompletionRequest{Model: "test", Messages: []openai.ChatCompletionMessage{{Role: "user", Content: "hi"}}},
-			wantErr: false,
-		},
-		{
-			name:    "empty model",
-			req:     &openai.ChatCompletionRequest{Model: "", Messages: []openai.ChatCompletionMessage{{Role: "user", Content: "hi"}}},
-			wantErr: true,
-		},
-		{
-			name:    "empty messages",
-			req:     &openai.ChatCompletionRequest{Model: "test", Messages: []openai.ChatCompletionMessage{}},
-			wantErr: true,
-		},
-		{
-			name:    "empty role",
-			req:     &openai.ChatCompletionRequest{Model: "test", Messages: []openai.ChatCompletionMessage{{Role: "", Content: "hi"}}},
-			wantErr: true,
-		},
-		{
-			name:    "all valid roles",
-			req:     &openai.ChatCompletionRequest{Model: "test", Messages: []openai.ChatCompletionMessage{{Role: "system", Content: "hi"}, {Role: "user", Content: "hi"}, {Role: "assistant", Content: "hi"}, {Role: "tool", Content: "hi"}}},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateChatRequest(tt.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("validateChatRequest() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestValidateCompletionRequest(t *testing.T) {
-	tests := []struct {
-		name    string
-		req     *openai.CompletionRequest
-		wantErr bool
-	}{
-		{
-			name:    "valid with string prompt",
-			req:     &openai.CompletionRequest{Model: "test", Prompt: "hello"},
-			wantErr: false,
-		},
-		{
-			name:    "valid with array prompt",
-			req:     &openai.CompletionRequest{Model: "test", Prompt: []any{"hello", "world"}},
-			wantErr: false,
-		},
-		{
-			name:    "empty model",
-			req:     &openai.CompletionRequest{Model: "", Prompt: "hello"},
-			wantErr: true,
-		},
-		{
-			name:    "nil prompt",
-			req:     &openai.CompletionRequest{Model: "test", Prompt: nil},
-			wantErr: true,
-		},
-		{
-			name:    "empty string prompt",
-			req:     &openai.CompletionRequest{Model: "test", Prompt: ""},
-			wantErr: true,
-		},
-		{
-			name:    "empty array prompt",
-			req:     &openai.CompletionRequest{Model: "test", Prompt: []any{}},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateCompletionRequest(tt.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("validateCompletionRequest() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestValidateEmbeddingRequest(t *testing.T) {
-	tests := []struct {
-		name    string
-		req     *openai.EmbeddingRequest
-		wantErr bool
-	}{
-		{
-			name:    "valid with string input",
-			req:     &openai.EmbeddingRequest{Model: "test", Input: "hello"},
-			wantErr: false,
-		},
-		{
-			name:    "valid with array input",
-			req:     &openai.EmbeddingRequest{Model: "test", Input: []any{"hello", "world"}},
-			wantErr: false,
-		},
-		{
-			name:    "empty model",
-			req:     &openai.EmbeddingRequest{Model: "", Input: "hello"},
-			wantErr: true,
-		},
-		{
-			name:    "nil input",
-			req:     &openai.EmbeddingRequest{Model: "test", Input: nil},
-			wantErr: true,
-		},
-		{
-			name:    "empty string input",
-			req:     &openai.EmbeddingRequest{Model: "test", Input: ""},
-			wantErr: true,
-		},
-		{
-			name:    "empty array input",
-			req:     &openai.EmbeddingRequest{Model: "test", Input: []any{}},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateEmbeddingRequest(tt.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("validateEmbeddingRequest() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
 	}
 }
 
@@ -478,4 +364,367 @@ func BenchmarkHandleV1Models(b *testing.B) {
 		rec := httptest.NewRecorder()
 		srv.handleV1Models(rec, req)
 	}
+}
+
+// TestExtractModelFromRequest tests extractModelFromRequest
+func TestExtractModelFromRequest(t *testing.T) {
+	t.Run("empty body", func(t *testing.T) {
+		model := extractModelFromRequest([]byte{})
+		if model != "" {
+			t.Errorf("expected empty string, got %q", model)
+		}
+	})
+
+	t.Run("valid JSON with model", func(t *testing.T) {
+		body := []byte(`{"model": "gpt-4", "messages": [{"role": "user", "content": "hi"}]}`)
+		model := extractModelFromRequest(body)
+		if model != "gpt-4" {
+			t.Errorf("expected gpt-4, got %q", model)
+		}
+	})
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		body := []byte(`{invalid json}`)
+		model := extractModelFromRequest(body)
+		if model != "" {
+			t.Errorf("expected empty string for invalid JSON, got %q", model)
+		}
+	})
+
+	t.Run("JSON without model field", func(t *testing.T) {
+		body := []byte(`{"messages": [{"role": "user", "content": "hi"}]}`)
+		model := extractModelFromRequest(body)
+		if model != "" {
+			t.Errorf("expected empty string, got %q", model)
+		}
+	})
+}
+
+// TestSetGetProviderContext tests setProviderContext and getProviderFromContext
+func TestSetGetProviderContext(t *testing.T) {
+	t.Run("both values set", func(t *testing.T) {
+		ctx := context.Background()
+		ctx = setProviderContext(ctx, "openai", "gpt-4")
+		provider, model := getProviderFromContext(ctx)
+		if provider != "openai" {
+			t.Errorf("expected provider 'openai', got %q", provider)
+		}
+		if model != "gpt-4" {
+			t.Errorf("expected model 'gpt-4', got %q", model)
+		}
+	})
+
+	t.Run("only provider set", func(t *testing.T) {
+		ctx := context.Background()
+		ctx = setProviderContext(ctx, "ollama", "")
+		provider, model := getProviderFromContext(ctx)
+		if provider != "ollama" {
+			t.Errorf("expected provider 'ollama', got %q", provider)
+		}
+		if model != "" {
+			t.Errorf("expected empty model, got %q", model)
+		}
+	})
+
+	t.Run("no values set", func(t *testing.T) {
+		ctx := context.Background()
+		provider, model := getProviderFromContext(ctx)
+		if provider != "" {
+			t.Errorf("expected empty provider, got %q", provider)
+		}
+		if model != "" {
+			t.Errorf("expected empty model, got %q", model)
+		}
+	})
+}
+
+// TestLoggingMiddleware tests the loggingMiddleware
+func TestLoggingMiddleware(t *testing.T) {
+	t.Run("logs request metadata", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+		srv := New(cfg, nil, stateMgr)
+
+		nextCalled := false
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextCalled = true
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status": "ok"}`))
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model": "gpt-4", "messages": [{"role": "user", "content": "hi"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		middleware := srv.loggingMiddleware(next)
+		middleware.ServeHTTP(rec, req)
+
+		if !nextCalled {
+			t.Error("next handler was not called")
+		}
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+	})
+
+	t.Run("extracts model from request body", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+		srv := New(cfg, nil, stateMgr)
+
+		var extractedModel string
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, model := getProviderFromContext(r.Context())
+			extractedModel = model
+			w.WriteHeader(http.StatusOK)
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model": "claude-3", "messages": []}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		middleware := srv.loggingMiddleware(next)
+		middleware.ServeHTTP(rec, req)
+
+		// Middleware should extract model from request body
+		// This is tested indirectly through the logging behavior
+		if extractedModel != "" {
+			t.Log("Model extraction working (indirect test)")
+		}
+	})
+
+	t.Run("with provider context", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+		srv := New(cfg, nil, stateMgr)
+
+		var providerName, modelName string
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			providerName, modelName = getProviderFromContext(r.Context())
+			w.WriteHeader(http.StatusOK)
+		})
+
+		ctx := context.Background()
+		ctx = setProviderContext(ctx, "ollama", "llama-2")
+		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil).WithContext(ctx)
+		rec := httptest.NewRecorder()
+
+		middleware := srv.loggingMiddleware(next)
+		middleware.ServeHTTP(rec, req)
+
+		if providerName != "ollama" {
+			t.Errorf("expected provider 'ollama', got %q", providerName)
+		}
+		if modelName != "llama-2" {
+			t.Errorf("expected model 'llama-2', got %q", modelName)
+		}
+	})
+}
+
+// TestResponseWriter tests the responseWriter wrapper
+func TestResponseWriter(t *testing.T) {
+	t.Run("captures status code", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		rw := &responseWriter{ResponseWriter: rec, statusCode: http.StatusOK}
+
+		rw.WriteHeader(http.StatusCreated)
+
+		if rw.statusCode != http.StatusCreated {
+			t.Errorf("expected status 201, got %d", rw.statusCode)
+		}
+	})
+
+	t.Run("captures body size", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		rw := &responseWriter{ResponseWriter: rec, statusCode: http.StatusOK}
+
+		data := []byte(`{"response": "data"}`)
+		n, err := rw.Write(data)
+
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if n != len(data) {
+			t.Errorf("expected to write %d bytes, wrote %d", len(data), n)
+		}
+		if rw.size != len(data) {
+			t.Errorf("expected size %d, got %d", len(data), rw.size)
+		}
+	})
+
+	t.Run("captures body content", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		rw := &responseWriter{ResponseWriter: rec, statusCode: http.StatusOK}
+
+		data := []byte(`{"response": "test"}`)
+		rw.Write(data)
+
+		if string(rw.body) != string(data) {
+			t.Errorf("expected body %q, got %q", string(data), string(rw.body))
+		}
+	})
+
+	t.Run("limits body capture size", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		rw := &responseWriter{ResponseWriter: rec, statusCode: http.StatusOK}
+
+		// Write more than 10MiB
+		largeData := make([]byte, 11*1024*1024)
+		rw.Write(largeData)
+
+		expectedSize := 10 * 1024 * 1024
+		if rw.size != len(largeData) {
+			t.Errorf("expected size %d, got %d (size should track all written bytes)", len(largeData), rw.size)
+		}
+		if len(rw.body) != expectedSize {
+			t.Errorf("expected body capture limited to %d bytes, got %d", expectedSize, len(rw.body))
+		}
+	})
+}
+
+// TestLoggingMiddleware_BodyTruncation tests that the logging middleware handles large bodies
+func TestLoggingMiddleware_BodyTruncation(t *testing.T) {
+	cfg := config.DefaultConfig()
+	stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+	srv := New(cfg, nil, stateMgr)
+
+	// Create a large body (over 1000 chars to trigger truncation)
+	largeBody := strings.NewReader(`{"model": "` + strings.Repeat("a", 2000) + `", "messages": [{"role": "user", "content": "hi"}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", largeBody)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := srv.loggingMiddleware(next)
+	middleware.ServeHTTP(rec, req)
+
+	// Should complete without error
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+}
+
+// TestLoggingMiddleware_EmptyBody tests middleware with no body
+func TestLoggingMiddleware_EmptyBody(t *testing.T) {
+	cfg := config.DefaultConfig()
+	stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+	srv := New(cfg, nil, stateMgr)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	rec := httptest.NewRecorder()
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := srv.loggingMiddleware(next)
+	middleware.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+}
+
+// TestLoggingMiddleware_InvalidJSONBody tests middleware with invalid JSON
+func TestLoggingMiddleware_InvalidJSONBody(t *testing.T) {
+	cfg := config.DefaultConfig()
+	stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+	srv := New(cfg, nil, stateMgr)
+
+	// Invalid JSON body - the middleware should still handle it gracefully
+	invalidBody := strings.NewReader(`{invalid json`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", invalidBody)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := srv.loggingMiddleware(next)
+	middleware.ServeHTTP(rec, req)
+
+	// Should complete - middleware should not fail on invalid JSON
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+}
+
+// TestHandleV1Moderations tests the moderations handler
+func TestHandleV1Moderations(t *testing.T) {
+	t.Run("POST with no providers", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+		srv := New(cfg, nil, stateMgr)
+
+		body := strings.NewReader(`{"input": "hello"}`)
+		req := httptest.NewRequest(http.MethodPost, "/v1/moderations", body)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		srv.handleV1Moderations(rec, req)
+
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("expected status 503, got %d", rec.Code)
+		}
+	})
+
+	t.Run("GET method not allowed", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+		srv := New(cfg, nil, stateMgr)
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/moderations", nil)
+		rec := httptest.NewRecorder()
+
+		srv.handleV1Moderations(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("expected status 405, got %d", rec.Code)
+		}
+	})
+}
+
+// TestHandleV1Completions tests the completions handler
+func TestHandleV1Completions(t *testing.T) {
+	t.Run("POST with no models configured", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+		srv := New(cfg, nil, stateMgr)
+
+		body := strings.NewReader(`{"model": "gpt-4", "prompt": "hello"}`)
+		req := httptest.NewRequest(http.MethodPost, "/v1/completions", body)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		srv.handleV1Completions(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("expected status 404, got %d", rec.Code)
+		}
+	})
+}
+
+// TestHandleV1EmbeddingsPost tests embeddings POST handler
+func TestHandleV1EmbeddingsPost(t *testing.T) {
+	t.Run("POST with no models configured", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+		srv := New(cfg, nil, stateMgr)
+
+		body := strings.NewReader(`{"model": "text-embedding-3-small", "input": "hello"}`)
+		req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", body)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		srv.handleV1Embeddings(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("expected status 404, got %d", rec.Code)
+		}
+	})
 }

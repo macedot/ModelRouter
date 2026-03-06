@@ -8,11 +8,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/macedot/openmodel/internal/api/openai"
+)
+
+// maxResponseBodySize defines the maximum size of response body to read for error handling
+const maxResponseBodySize = 1024 * 1024 // 1MB
+
+// maxTokenSize defines the maximum token size for streaming buffer
+const maxTokenSize = 1024 * 1024 // 1MB
+
+var (
+	// streamBufferPool is a pool for reusing streaming buffers (1MB each)
+	streamBufferPool = sync.Pool{
+		New: func() interface{} {
+			buf := make([]byte, maxTokenSize)
+			return &buf
+		},
+	}
 )
 
 // Provider defines the interface for LLM providers
@@ -53,10 +71,22 @@ type OpenAIProvider struct {
 // NewOpenAIProvider creates a new OpenAI-compatible provider
 func NewOpenAIProvider(name, baseURL, apiKey string) *OpenAIProvider {
 	return &OpenAIProvider{
-		name:       name,
-		baseURL:    strings.TrimSuffix(baseURL, "/"),
-		apiKey:     apiKey,
-		httpClient: &http.Client{Timeout: 120 * time.Second},
+		name:    name,
+		baseURL: strings.TrimSuffix(baseURL, "/"),
+		apiKey:  apiKey,
+		httpClient: &http.Client{
+			Timeout: 120 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 100,
+				IdleConnTimeout:     90 * time.Second,
+				DialContext: (&net.Dialer{
+					Timeout: 10 * time.Second,
+				}).DialContext,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ResponseHeaderTimeout: 30 * time.Second,
+			},
+		},
 	}
 }
 
@@ -85,6 +115,94 @@ func (p *OpenAIProvider) doRequest(ctx context.Context, req *http.Request) (*htt
 	return resp, nil
 }
 
+// handleHTTPResponse checks the HTTP response status and returns an error if not OK.
+// The closeBody parameter controls whether to close the response body (use true for streaming).
+func (p *OpenAIProvider) handleHTTPResponse(resp *http.Response, closeBody bool) error {
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
+		if closeBody {
+			resp.Body.Close()
+		}
+		if er := openai.ParseErrorResponse(respBody); er != nil {
+			return er
+		}
+		return fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+// copyRequestOptions copies optional fields from src to dst.
+// The stream parameter sets the Stream field on dst.
+func copyRequestOptions(src *openai.ChatCompletionRequest, dst *openai.ChatCompletionRequest, stream bool) {
+	dst.Stream = stream
+	if src == nil {
+		return
+	}
+	dst.Temperature = src.Temperature
+	dst.TopP = src.TopP
+	dst.N = src.N
+	dst.Stop = src.Stop
+	dst.MaxTokens = src.MaxTokens
+	dst.PresencePenalty = src.PresencePenalty
+	dst.FrequencyPenalty = src.FrequencyPenalty
+	dst.LogitBias = src.LogitBias
+	dst.User = src.User
+	dst.ResponseFormat = src.ResponseFormat
+	dst.Seed = src.Seed
+	dst.Tools = src.Tools
+	dst.ToolChoice = src.ToolChoice
+}
+
+// streamResponse is a generic streaming helper that reads from an HTTP response
+// and sends parsed responses to a channel.
+// The parseFunc receives the data string (already stripped of "data: " prefix) and
+// should return the parsed response and any error (errors are skipped).
+// The isDoneFunc checks if the data indicates streaming is complete.
+func streamResponse[T any](ctx context.Context, resp *http.Response, parseFunc func(data string) (T, error), isDoneFunc func(data string) bool) <-chan T {
+	ch := make(chan T, 10)
+	go func() {
+		defer close(ch)
+		defer resp.Body.Close()
+
+		scanner := bufio.NewScanner(resp.Body)
+		// Get buffer from pool for large streaming responses
+		bufPtr := streamBufferPool.Get().(*[]byte)
+		defer streamBufferPool.Put(bufPtr)
+		scanner.Buffer(*bufPtr, maxTokenSize)
+
+		for scanner.Scan() {
+			// Check for context cancellation
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+			if isDoneFunc(data) {
+				break
+			}
+
+			resp, err := parseFunc(data)
+			if err != nil {
+				continue
+			}
+
+			// Non-blocking send with context check
+			select {
+			case ch <- resp:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return ch
+}
+
 // ListModels lists available models from the provider
 func (p *OpenAIProvider) ListModels(ctx context.Context) (*openai.ModelList, error) {
 	req, err := http.NewRequest("GET", p.baseURL+"/models", nil)
@@ -102,12 +220,8 @@ func (p *OpenAIProvider) ListModels(ctx context.Context) (*openai.ModelList, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		if er := openai.ParseErrorResponse(respBody); er != nil {
-			return nil, er
-		}
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	if err := p.handleHTTPResponse(resp, true); err != nil {
+		return nil, err
 	}
 
 	var modelList openai.ModelList
@@ -124,22 +238,7 @@ func (p *OpenAIProvider) Chat(ctx context.Context, model string, messages []open
 		Model:    model,
 		Messages: messages,
 	}
-	if opts != nil {
-		req.Temperature = opts.Temperature
-		req.TopP = opts.TopP
-		req.N = opts.N
-		req.Stream = false
-		req.Stop = opts.Stop
-		req.MaxTokens = opts.MaxTokens
-		req.PresencePenalty = opts.PresencePenalty
-		req.FrequencyPenalty = opts.FrequencyPenalty
-		req.LogitBias = opts.LogitBias
-		req.User = opts.User
-		req.ResponseFormat = opts.ResponseFormat
-		req.Seed = opts.Seed
-		req.Tools = opts.Tools
-		req.ToolChoice = opts.ToolChoice
-	}
+	copyRequestOptions(opts, &req, false)
 
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -157,17 +256,18 @@ func (p *OpenAIProvider) Chat(ctx context.Context, model string, messages []open
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		if er := openai.ParseErrorResponse(respBody); er != nil {
-			return nil, er
-		}
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	if err := p.handleHTTPResponse(resp, true); err != nil {
+		return nil, err
+	}
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var chatResp openai.ChatCompletionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w (raw response: %s)", err, string(respBody))
 	}
 
 	return &chatResp, nil
@@ -178,19 +278,8 @@ func (p *OpenAIProvider) StreamChat(ctx context.Context, model string, messages 
 	req := openai.ChatCompletionRequest{
 		Model:    model,
 		Messages: messages,
-		Stream:   true,
 	}
-	if opts != nil {
-		req.Temperature = opts.Temperature
-		req.TopP = opts.TopP
-		req.N = opts.N
-		req.Stop = opts.Stop
-		req.MaxTokens = opts.MaxTokens
-		req.PresencePenalty = opts.PresencePenalty
-		req.FrequencyPenalty = opts.FrequencyPenalty
-		req.LogitBias = opts.LogitBias
-		req.User = opts.User
-	}
+	copyRequestOptions(opts, &req, true)
 
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -207,56 +296,38 @@ func (p *OpenAIProvider) StreamChat(ctx context.Context, model string, messages 
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if er := openai.ParseErrorResponse(respBody); er != nil {
-			return nil, er
-		}
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	if err := p.handleHTTPResponse(resp, true); err != nil {
+		return nil, err
 	}
 
-	ch := make(chan openai.ChatCompletionResponse, 10)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
-
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-			data := strings.TrimPrefix(line, "data: ")
-			if openai.IsStreamDone(data) {
-				break
-			}
-
-			chunk, err := openai.StreamResponseToChunk([]byte(data))
-			if err != nil {
-				continue
-			}
-
-			chatResp := openai.ChatCompletionResponse{
-				ID:      chunk.ID,
-				Object:  chunk.Object,
-				Created: chunk.Created,
-				Model:   chunk.Model,
-			}
-			for _, c := range chunk.Choices {
-				finishReason := ""
-				if c.FinishReason != nil {
-					finishReason = *c.FinishReason
-				}
-				chatResp.Choices = append(chatResp.Choices, openai.ChatCompletionChoice{
-					Index:        c.Index,
-					Delta:        &c.Delta,
-					FinishReason: finishReason,
-				})
-			}
-			ch <- chatResp
+	// Parse function for chat streaming
+	parseChat := func(data string) (openai.ChatCompletionResponse, error) {
+		chunk, err := openai.StreamResponseToChunk([]byte(data))
+		if err != nil {
+			return openai.ChatCompletionResponse{}, err
 		}
-	}()
+
+		chatResp := openai.ChatCompletionResponse{
+			ID:      chunk.ID,
+			Object:  chunk.Object,
+			Created: chunk.Created,
+			Model:   chunk.Model,
+		}
+		for _, c := range chunk.Choices {
+			finishReason := ""
+			if c.FinishReason != nil {
+				finishReason = *c.FinishReason
+			}
+			chatResp.Choices = append(chatResp.Choices, openai.ChatCompletionChoice{
+				Index:        c.Index,
+				Delta:        &c.Delta,
+				FinishReason: finishReason,
+			})
+		}
+		return chatResp, nil
+	}
+
+	ch := streamResponse(ctx, resp, parseChat, openai.IsStreamDone)
 
 	return ch, nil
 }
@@ -282,12 +353,8 @@ func (p *OpenAIProvider) Complete(ctx context.Context, model string, req *openai
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		if er := openai.ParseErrorResponse(respBody); er != nil {
-			return nil, er
-		}
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	if err := p.handleHTTPResponse(resp, true); err != nil {
+		return nil, err
 	}
 
 	var compResp openai.CompletionResponse
@@ -318,38 +385,25 @@ func (p *OpenAIProvider) StreamComplete(ctx context.Context, model string, req *
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if er := openai.ParseErrorResponse(respBody); er != nil {
-			return nil, er
-		}
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	if err := p.handleHTTPResponse(resp, true); err != nil {
+		return nil, err
 	}
 
-	ch := make(chan openai.CompletionResponse, 10)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
-
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				break
-			}
-
-			var compResp openai.CompletionResponse
-			if err := json.Unmarshal([]byte(data), &compResp); err != nil {
-				continue
-			}
-			ch <- compResp
+	// Parse function for completion streaming
+	parseComplete := func(data string) (openai.CompletionResponse, error) {
+		var compResp openai.CompletionResponse
+		if err := json.Unmarshal([]byte(data), &compResp); err != nil {
+			return openai.CompletionResponse{}, err
 		}
-	}()
+		return compResp, nil
+	}
+
+	// Done check for completion streaming
+	isCompleteDone := func(data string) bool {
+		return data == "[DONE]"
+	}
+
+	ch := streamResponse(ctx, resp, parseComplete, isCompleteDone)
 
 	return ch, nil
 }
@@ -377,12 +431,8 @@ func (p *OpenAIProvider) Embed(ctx context.Context, model string, input []string
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		if er := openai.ParseErrorResponse(respBody); er != nil {
-			return nil, er
-		}
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	if err := p.handleHTTPResponse(resp, true); err != nil {
+		return nil, err
 	}
 
 	var embedResp openai.EmbeddingResponse
@@ -415,12 +465,8 @@ func (p *OpenAIProvider) Moderate(ctx context.Context, input string) (*openai.Mo
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		if er := openai.ParseErrorResponse(respBody); er != nil {
-			return nil, er
-		}
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	if err := p.handleHTTPResponse(resp, true); err != nil {
+		return nil, err
 	}
 
 	var modResp openai.ModerationResponse

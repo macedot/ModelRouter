@@ -25,6 +25,35 @@ This will:
 - Install to `/usr/local/bin/openmodel`
 - Create a systemd service (optional)
 
+### Docker
+
+Pull the latest image:
+
+```bash
+docker pull ghcr.io/macedot/openmodel:latest
+```
+
+Run with mounted config:
+
+```bash
+docker run -d \
+  -p 12345:12345 \
+  -v ~/.config/openmodel/config.json:/root/.config/openmodel/config.json:ro \
+  ghcr.io/macedot/openmodel:latest
+```
+
+Or use docker-compose:
+
+```bash
+# Create config file first
+mkdir -p ~/.config/openmodel
+cp config.json.example ~/.config/openmodel/config.json
+# Edit config with your API keys
+
+# Start with docker-compose
+docker-compose up -d
+```
+
 ### Manual Install
 
 Build from source:
@@ -32,8 +61,8 @@ Build from source:
 ```bash
 git clone https://github.com/macedot/openmodel.git
 cd openmodel
-go build
-sudo mv openmodel /usr/local/bin/
+make build
+sudo make install
 ```
 
 
@@ -45,7 +74,7 @@ Create `~/.config/openmodel/config.json`:
 {
   "$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/config.schema.json",
   "server": {
-    "port": 11435,
+    "port": 12345,
     "host": "localhost"
   },
   "providers": {
@@ -83,8 +112,21 @@ Create `~/.config/openmodel/config.json`:
 ./openmodel
 
 # In another terminal, use OpenAI-compatible endpoints:
-curl http://localhost:11435/v1/models
-curl http://localhost:11435/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}]}'
+curl http://localhost:12345/v1/models
+curl http://localhost:12345/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+## Default Port
+
+The default port is **12345**. You can override this in your config:
+
+```json
+{
+  "server": {
+    "port": 12345,
+    "host": "localhost"
+  }
+}
 ```
 
 ## API Endpoints
@@ -98,14 +140,69 @@ curl http://localhost:11435/v1/chat/completions -H "Content-Type: application/js
 
 ### Server Endpoints
 - `GET /` - Server status
-
-## Architecture
+- `GET /health` - Health check endpoint (for Docker healthchecks)
 
 openmodel acts as a reverse proxy that:
 1. Accepts requests at OpenAI-compatible endpoints
 2. Routes to configured providers in fallback order
 3. Tracks provider failures and automatically switches
 4. Implements progressive timeout on complete failure
+
+## Development
+
+```bash
+# Build locally
+make build
+
+# Build Docker image
+make docker-build
+
+# Run tests
+make test
+
+# Run single test
+go test -race -v -run TestHandleRoot ./internal/server
+
+# Generate coverage report
+make cover
+
+# Full check (fmt, vet, test)
+make check
+
+# Lint (requires golangci-lint)
+make lint
+```
+
+## Test Coverage
+
+Current test coverage: **77.2%**
+
+| Package | Coverage |
+|---------|----------|
+| internal/logger | 100% |
+| internal/state | 100% |
+| internal/provider | 87.9% |
+| internal/api/openai | 84.5% |
+| internal/server | 82.7% |
+| internal/config | 83.5% |
+| cmd | 31.0% |
+
+**All core packages ≥80% coverage** ✓
+
+## Releasing
+
+Create a new release:
+
+```bash
+# Create and push a tag
+make release VERSION=v1.0.0
+
+# This triggers GitHub Actions to:
+# - Run tests
+# - Build binaries (amd64, arm64)
+# - Build and push Docker image to ghcr.io
+# - Create GitHub release with binaries
+```
 
 ## License
 

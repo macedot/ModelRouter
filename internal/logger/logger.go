@@ -21,6 +21,7 @@ var (
 type Level string
 
 const (
+	LevelTrace Level = "trace"
 	LevelDebug Level = "debug"
 	LevelInfo  Level = "info"
 	LevelWarn  Level = "warn"
@@ -35,8 +36,13 @@ const (
 	FormatText Format = "text"
 )
 
+// Custom slog level for trace (lower than debug)
+const slogLevelTrace = slog.Level(-8) // slog.LevelDebug is -4
+
 func parseLevel(s string) (slog.Level, error) {
 	switch strings.ToLower(s) {
+	case "trace":
+		return slogLevelTrace, nil
 	case "debug":
 		return slog.LevelDebug, nil
 	case "info":
@@ -64,7 +70,7 @@ func getWriter() io.Writer {
 }
 
 // Init initializes the logger with the given level and format.
-// Level can be: debug, info, warn, error
+// Level can be: trace, debug, info, warn, error
 // Format can be: text, json
 func Init(level string, format string) error {
 	mu.Lock()
@@ -103,6 +109,16 @@ func Get() *slog.Logger {
 		return slog.Default()
 	}
 	return logger
+}
+
+// Trace logs a message at trace level.
+func Trace(msg string, args ...any) {
+	Get().Log(context.Background(), slogLevelTrace, msg, args...)
+}
+
+// TraceContext logs a message at trace level with context.
+func TraceContext(ctx context.Context, msg string, args ...any) {
+	Get().Log(ctx, slogLevelTrace, msg, args...)
 }
 
 // Debug logs a message at debug level.

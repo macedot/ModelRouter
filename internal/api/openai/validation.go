@@ -7,6 +7,15 @@ import (
 	"strings"
 )
 
+// parseRequestBody unmarshals JSON data into a map
+func parseRequestBody(data []byte) (map[string]interface{}, error) {
+	var req map[string]interface{}
+	if err := json.Unmarshal(data, &req); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+	return req, nil
+}
+
 // ValidationError represents a validation error with location information
 type ValidationError struct {
 	Field   string
@@ -20,9 +29,9 @@ func (e ValidationError) Error() string {
 // ValidateChatCompletionRequest validates a chat completion request
 func ValidateChatCompletionRequest(data []byte) error {
 	// Basic JSON structure validation
-	var req map[string]interface{}
-	if err := json.Unmarshal(data, &req); err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
+	req, err := parseRequestBody(data)
+	if err != nil {
+		return err
 	}
 
 	// Required fields
@@ -162,9 +171,9 @@ func validateContentPart(part interface{}, msgIndex, partIndex int) error {
 
 // ValidateEmbeddingRequest validates an embedding request
 func ValidateEmbeddingRequest(data []byte) error {
-	var req map[string]interface{}
-	if err := json.Unmarshal(data, &req); err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
+	req, err := parseRequestBody(data)
+	if err != nil {
+		return err
 	}
 
 	if model, ok := req["model"]; !ok || model == "" {
@@ -188,9 +197,9 @@ func ValidateEmbeddingRequest(data []byte) error {
 
 // ValidateModerationRequest validates a moderation request
 func ValidateModerationRequest(data []byte) error {
-	var req map[string]interface{}
-	if err := json.Unmarshal(data, &req); err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
+	req, err := parseRequestBody(data)
+	if err != nil {
+		return err
 	}
 
 	if input := req["input"]; input == nil {

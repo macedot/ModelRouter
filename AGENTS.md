@@ -1,337 +1,270 @@
-# AGENTS.md - Development Guide for openmodel
+# AGENTS.md
 
-AI agent development guide for this Go-based HTTP proxy server providing OpenAI-compatible API endpoints with multi-provider fallback.
-
-## Quick Commands
+## Build/Lint/Test Commands
 
 ```bash
-# Build binary, run tests with race detection
-make build && make test
+# Build
+make build              # Build binary to ./openmodel
+make build VERSION=v1.0.0  # Build with custom version
 
-# Single test
-go test -race -v -run TestName ./internal/server
+# Test
+make test               # Run all tests with race detection
+go test -race -v ./...  # Run all tests with verbose output
 
-# Coverage report
-make cover
+# Run single test
+go test -race -v -run TestName ./path/to/package
+go test -race -v -run TestHandleRoot ./internal/server
+go test -race -v -run "TestChat" ./internal/provider  # Pattern matching
 
-# Format, vet, lint
-gofmt -w . && go vet ./... && make lint
+# Coverage
+make cover              # Generate coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out  # View HTML report
+go tool cover -func=coverage.out  # View text report
 
-# Generate types from OpenAPI spec
-make generate
+# Lint and format
+gofmt -w .              # Format all Go files
+go vet ./...            # Run go vet
+make lint               # Run golangci-lint (requires installation)
 
-# Run validation tests
-go test -v -run "SpecCompliance|BackwardCompatibility|Validation" ./internal/api/openai/...
+# All-in-one check
+make check              # Run fmt, vet, and test
+
+# Generate code
+make generate           # Regenerate OpenAPI types from spec
+
+# Docker
+make docker-build       # Build Docker image
+make docker-test        # Test Docker image runs correctly
+docker build --build-arg VERSION=v1.0.0 -t ghcr.io/macedot/openmodel:v1.0.0 .
+docker-compose up -d    # Run with docker-compose
+
+# Release
+make tag VERSION=v1.0.0     # Create git tag
+make release VERSION=v1.0.0 # Create and push tag (triggers CI)
 ```
 
-**Go version**: 1.25+ | **Module**: github.com/macedot/openmodel
+## Code Style Guidelines
 
-**Dependencies**: github.com/google/uuid, github.com/stretchr/testify, github.com/oapi-codegen/runtime
+### Imports
 
----
+Group imports in order: standard library, external packages, internal packages.
 
-## Type Generation
-
-Types are auto-generated from OpenAI OpenAPI spec (simplified 3.0.3 subset for core inference APIs).
-
-```bash
-# Download latest spec from OpenAI
-curl -o api/openai/openapi.yaml https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml
-
-# Regenerate types
-make generate
-
-# Extract core types from full spec
-python3 api/openai/extract-core.py api/openai/openapi-full.yaml api/openai/openapi.yaml
-```
-
-**Important:** Never manually edit `internal/api/openai/generated/*.go`
-
-**Type locations:**
-- `internal/api/openai/generated/types.gen.go` - Auto-generated from OpenAPI spec
-- `internal/api/openai/types.go` - Hand-written types for streaming and helper functions
-- `internal/api/openai/validation.go` - Request validation utilities
-
----
-
-## Code Style
-
-### Formatting
-- Use `gofmt` - must pass `gofmt -l .`
-- Tabs for indent, not spaces
-- Line length: target <100, max 120
-
-### Imports (blank line between groups)
 ```go
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "net/http"
+	"context"
+	"fmt"
+	"net/http"
 
-    "github.com/google/uuid"
-    "github.com/macedot/openmodel/internal/api/openai"
-    "github.com/macedot/openmodel/internal/config"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+
+	"github.com/macedot/openmodel/internal/api/openai"
+	"github.com/macedot/openmodel/internal/config"
 )
 ```
 
-### Naming
-- Files: `lowercase_with_underscores.go`
-- Packages: lowercase, short
-- Types: PascalCase
-- Interfaces: PascalCase + "er" suffix (`Provider`, `Logger`)
-- Acronyms: Keep case (`URL`, not `Url`)
+### Formatting
+
+- Use `gofmt` for all formatting - no custom style arguments
+- Run `gofmt -w .` before committing
 
 ### Types
-- Use interfaces for dependencies
-- Specify channel direction (`<-chan`, `chan<-`)
 
-```go
-type Provider interface {
-    Chat(ctx context.Context, model string, messages []openai.ChatCompletionMessage, opts *openai.ChatCompletionRequest) (*openai.ChatCompletionResponse, error)
-}
-```
+**Generated Types (DO NOT EDIT):**
+- `internal/api/openai/generated/types.gen.go` - auto-generated from OpenAPI spec
+- Regenerate with `make generate` when spec changes
+
+**Hand-written Types:**
+- `internal/api/openai/types.go` - hand-written types for streaming, helpers
+- Use pointers for optional fields (`*float64`, `*int`)
+- Use `any` for flexible fields (`any` not `interface{}`)
+
+### Naming Conventions
+
+**Packages:** Short, lowercase, single word: `config`, `logger`, `provider`, `server`, `state`. No underscores, no mixedCaps.
+
+**Types:** PascalCase for exported (`ChatCompletionRequest`), camelCase for unexported (`configWithSchema`). Interfaces: `Provider` (noun, not `ProviderInterface`). Implementations: `OpenAIProvider` (descriptive).
+
+**Functions/Methods:** PascalCase for exported (`NewOpenAIProvider()`), camelCase for unexported (`expandEnvVars()`). Constructors: `New<Type>()` pattern. Getters: no `Get` prefix - use `Name()` not `GetName()`.
 
 ### Error Handling
-- Wrap errors: `fmt.Errorf("failed to ...: %w", err)`
-- Never ignore errors - **especially JSON encoding errors**
-- Log important errors with context
+
+Always wrap errors with context, never ignore:
 
 ```go
-// GOOD - Check JSON encoding errors
-if err := json.NewEncoder(w).Encode(response); err != nil {
-    logger.Error("Failed to encode response", "error", err)
+// Good - wrap with context
+if err := json.Unmarshal(data, &req); err != nil {
+	return fmt.Errorf("failed to parse request: %w", err)
 }
 
-// GOOD - Wrap with context
-if err != nil {
-    return nil, fmt.Errorf("failed to marshal request: %w", err)
-}
+// Good - custom error types for validation
+return ValidationError{Field: "model", Message: "is required"}
 
-// BAD - Ignoring encoding error
-json.NewEncoder(w).Encode(response) // Don't do this
+// Bad - ignore error
+json.Marshal(req) // NO!
+
+// Bad - no context
+return err // NO! Add context
 ```
 
-### Context
-- Pass as first parameter
-- Check cancellation in streaming/long operations
-- Use `context.WithTimeout` for external calls
+Never ignore JSON encoding errors:
 
 ```go
-for scanner.Scan() {
-    select {
-    case <-ctx.Done():
-        logger.Info("Client disconnected")
-        return
-    default:
-    }
+// Good - check error
+if err := json.NewEncoder(w).Encode(resp); err != nil {
+	logger.Error("failed to encode response", "error", err)
+	return
 }
+
+// Bad - ignore error
+json.NewEncoder(w).Encode(resp) // NO!
 ```
 
-### Testing
-- Files: `*_test.go`
-- Table-driven tests preferred
-- Use testify's `assert`/`require`
-- Run with race detection: `go test -race ./...`
+### Testing Patterns
+
+Use `stretchr/testify` for assertions. Table-driven tests preferred:
 
 ```go
-func TestChatCompletion(t *testing.T) {
-    tests := []struct {
-        name     string
-        messages []openai.ChatCompletionMessage
-        wantErr  bool
-    }{
-        {"valid", []openai.ChatCompletionMessage{{Role: "user", Content: "hi"}}, false},
-        {"empty", []openai.ChatCompletionMessage{}, true},
-    }
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            // test logic
-        })
-    }
-}
-```
-
-### Thread Safety
-- Protect shared state with `sync.Mutex` or `sync.RWMutex`
-- Use `RLock` for reads
-
-```go
-func (s *State) IsAvailable(model string) bool {
-    s.mu.RLock()
-    defer s.mu.RUnlock()
-    return s.failureCounts[model] < threshold
+func TestValidateRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *Request
+		wantErr bool
+	}{
+		{"valid request", &Request{Model: "test"}, false},
+		{"empty model", &Request{Model: ""}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateRequest(tt.req)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 ```
 
-### JSON
-- Always use JSON tags
-- Handle marshal/unmarshal errors
-- Use `omitempty` for optional fields
+Run tests with race detection: `go test -race ./...`
 
-### HTTP Handlers
-- Set Content-Type before writing
-- Validate HTTP method first
-- Check JSON encoding errors
-- Return proper codes: 200, 400, 404, 500, 503
+### Package Organization
 
-```go
-func (s *Server) handleV1Models(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodGet {
-        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-        return
-    }
-    
-    w.Header().Set("Content-Type", "application/json")
-    if err := json.NewEncoder(w).Encode(response); err != nil {
-        logger.Error("Failed to encode response", "error", err)
-    }
-}
 ```
+cmd/                    # Entry point
+  main.go               # CLI with serve/test/models commands
+internal/
+  api/openai/           # OpenAI types + validation
+    generated/          # Auto-generated types (DO NOT EDIT)
+    types.go            # Hand-written types
+    validation.go       # Request validation
+  config/               # JSON config with schema validation
+  logger/               # Structured logging (slog wrapper)
+  provider/             # Provider interface + OpenAI impl
+  server/               # HTTP handlers + routing
+    handlers.go         # HTTP handlers
+    handlers_helpers.go # Extracted helper functions
+    routes.go           # Route registration
+  state/                # Failure tracking for fallback
+```
+
+### Validation
+
+- Validation functions in `internal/api/openai/validation.go`
+- Return `ValidationError` with field and message
+- Validate required fields, then optional field types
+- Integration tests in `internal/server/validation_integration_test.go`
+- Use raw bytes validation: `ValidateChatCompletionRequest(body []byte)` not struct validation
 
 ### Configuration
-- Support `${VAR}` env var expansion
-- Provide `DefaultConfig()`
-- Validate in `Load()`
 
----
+- Config file: `~/.config/openmodel/config.json`
+- Supports `${VAR}` env var expansion in provider configs
+- Schema validation required (`$schema` field must be present)
+- Env vars override config: `OPENMODEL_LOG_LEVEL`, `OPENMODEL_LOG_FORMAT`
+- Default port: **12345** (configurable in server.port)
 
-## Validation
+### HTTP Handlers
 
-Request validation is integrated into handlers:
+- Register routes in `routes.go`, implement in `handlers.go`
+- Use helper functions from `handlers_helpers.go`:
+  - `readAndValidateRequest()` - reads body, validates, parses
+  - `findProviderWithFailover()` - finds available provider
+  - `executeWithFailover()` - handles provider failover loop
+  - `handleProviderError()` / `handleProviderSuccess()` - manages state
+  - `drainStream[T]()` - prevents goroutine leaks in streaming
+- Validate request before processing
+- Use `logger` package for structured logging
+- Set appropriate HTTP status codes
+- Handle streaming with goroutines and channels
+- Request ID: X-Request-ID header added for tracing (reused or generated)
 
-```go
-// Chat completion validation
-func validateChatRequest(req *openai.ChatCompletionRequest) error {
-    if req.Model == "" {
-        return fmt.Errorf("model is required")
-    }
-    if len(req.Messages) == 0 {
-        return fmt.Errorf("messages array cannot be empty")
-    }
-    for i, msg := range req.Messages {
-        if msg.Role == "" {
-            return fmt.Errorf("message role is required at index %d", i)
-        }
-    }
-    return nil
-}
+### Security
+
+- HTTP server hardening:
+  - MaxHeaderBytes: 1MB limit (prevents header-based DoS)
+  - ReadTimeout: 30s
+  - WriteTimeout: 120s
+  - IdleTimeout: 120s
+- Docker runs as non-root user (`nonroot:nonroot`)
+- Config file mounted read-only in containers
+
+### Docker
+
+- Dockerfile uses multi-stage build (Go builder, distroless runtime)
+- Default image: `ghcr.io/macedot/openmodel:latest`
+- Platforms: `linux/amd64`, `linux/arm64`
+- Port: 12345 (exposed)
+- Config: Mount at `/root/.config/openmodel/config.json:ro`
+- Build: `docker build --build-arg VERSION=$(git describe --tags) -t openmodel:latest .`
+- Security: Runs as non-root user (`nonroot:nonroot`)
+- Healthcheck: Checks `/health` endpoint (enabled in docker-compose)
+
+### CI/CD (GitHub Actions)
+
+- Release workflow runs on tag push (`v*`)
+- Tests: Run `go test -race -cover ./...` before building
+- Build: Cross-platform binaries (amd64, arm64) with version embedding
+- Docker: Multi-platform build with layer caching
+- Signing: Images signed with cosign (OIDC-based)
+- SBOM: Software Bill of Materials generated with syft (SPDX format)
+- Release: Binaries and SBOMs uploaded to GitHub releases
+- Repository: `ghcr.io/macedot/openmodel`
+
+To verify signed images:
+```bash
+cosign verify ghcr.io/macedot/openmodel:latest
 ```
 
-**Validates:**
-- Required fields (model, messages, input)
-- Field types (string/array for multimodal)
-- Role values (user, assistant, system, tool, developer)
-- Empty collections
+Note: First release after adding cosign will fail until SIGSTORE_PUBLIC_KEY is configured in repository secrets.
 
----
+### Architecture Patterns
 
-## Package Structure
+**DRY (Don't Repeat Yourself):**
+- Extract common logic to helper functions
+- Use generic functions where appropriate (see `streamResponse[T]`, `drainStream[T]` in provider.go)
+- Consolidate duplicate patterns (see handlers_helpers.go)
+- Reuse buffers with sync.Pool (see streamBufferPool in provider.go)
 
-```
-cmd/                  # Entry point
-internal/
-  api/openai/        # OpenAI types
-    ├── generated/    # Auto-generated from spec
-    ├── types.go      # Hand-written types
-    ├── validation.go # Request validation
-    └── *_test.go     # Tests
-  config/            # Config loading
-  logger/            # Logging
-  provider/          # Provider interface + implementations
-  server/            # HTTP server + handlers
-  state/             # Failure tracking
-```
+**KISS (Keep It Simple):**
+- Prefer simple, readable code over clever code
+- Avoid premature optimization
+- Use standard library when possible
+- Break large functions into smaller helpers (see loggingMiddleware refactor)
 
----
+**TDD (Test-Driven Development):**
+- Write tests before or alongside implementation
+- Aim for 80%+ coverage (all packages now ≥80%)
+- Use table-driven tests for multiple scenarios
+- Test edge cases and error paths
 
-## Common Tasks
+### Performance
 
-### Add Provider
-1. Implement `Provider` interface in `internal/provider/`
-2. Add config in `internal/config/config.go`
-3. Add tests in `internal/provider/provider_test.go`
-
-### Add Endpoint
-1. Add handler in `internal/server/handlers.go`
-2. Add route in `internal/server/routes.go`
-3. Add validation in `internal/api/openai/validation.go`
-4. Add tests in `internal/server/integration_test.go`
-5. Update OpenAPI spec if needed
-
-### Add Validation
-1. Add validation function in `internal/api/openai/validation.go`
-2. Add tests in `internal/api/openai/validation_test.go`
-3. Call validation in handler
-
----
-
-## Examples
-
-### Chat Completion Request
-
-```json
-{
-  "model": "gpt-4",
-  "messages": [
-    {"role": "user", "content": "Hello"}
-  ],
-  "temperature": 0.7,
-  "stream": true,
-  "stream_options": {"include_usage": true}
-}
-```
-
-### Streaming Response
-
-```go
-// Client reads SSE events
-for {
-    line, err := reader.ReadString('\n')
-    if strings.HasPrefix(line, "data: ") {
-        data := strings.TrimPrefix(line, "data: ")
-        if data == "[DONE]" {
-            break
-        }
-        // Parse chunk
-    }
-}
-```
-
-### Response Format
-
-```json
-{
-  "id": "chatcmpl-123",
-  "object": "chat.completion",
-  "created": 1234567890,
-  "model": "gpt-4",
-  "choices": [{
-    "index": 0,
-    "message": {"role": "assistant", "content": "Hello!"},
-    "finish_reason": "stop"
-  }],
-  "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
-}
-```
-
----
-
-## Test Coverage
-
-Current coverage (all tests passing with race detection):
-
-| Package | Coverage |
-|---------|----------|
-| internal/api/openai | 73.7% |
-| internal/server | 84.2% |
-| internal/provider | 78.7% |
-| internal/config | 84.4% |
-| internal/logger | 100% |
-| internal/state | 100% |
-
-**Run coverage:** `make cover`
-
----
-
-Last updated: 2026-03-02
+- Streaming buffers pooled with sync.Pool (1MB buffers reused)
+- Schema caching with thread-safe double-checked locking
+- HTTP connection pooling (100 idle conns per host)
+- Request body size limits (50MB for requests, 10MB for moderations)
+- Use table-driven tests for multiple scenarios
+- Test edge cases and error paths

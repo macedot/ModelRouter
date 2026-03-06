@@ -18,15 +18,8 @@ Thumbs.db
 *.out
 coverage.html
 
-# Sisyphus evidence (generated)
+# Others
 .sisyphus/*
-
-# Config files (may contain secrets)
-config.json
-supermodel.json
-*.local.json
-.sisyphus/
-session
-
-# Git worktrees
+.opencode
 .worktrees/
+config.json

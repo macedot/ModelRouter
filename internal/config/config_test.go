@@ -1,9 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // TestDefaultConfig tests the DefaultConfig function
@@ -12,8 +15,8 @@ func TestDefaultConfig(t *testing.T) {
 		cfg := DefaultConfig()
 
 		// Verify server defaults
-		if cfg.Server.Port != 11435 {
-			t.Errorf("expected port 11435, got %d", cfg.Server.Port)
+		if cfg.Server.Port != 12345 {
+			t.Errorf("expected port 12345, got %d", cfg.Server.Port)
 		}
 		if cfg.Server.Host != "localhost" {
 			t.Errorf("expected host localhost, got %s", cfg.Server.Host)
@@ -183,7 +186,7 @@ func TestLoadFromPath(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "config.json")
 		configContent := `{
-			"server": {"port": 11435, "host": "localhost"},
+			"server": {"port": 12345, "host": "localhost"},
 			"providers": {"test": {"url": "${TEST_PROVIDER_URL}", "apiKey": ""}},
 			"models": {},
 			"log_level": "info",
@@ -236,8 +239,8 @@ func TestLoadFromPath(t *testing.T) {
 			t.Fatalf("LoadFromPath() error = %v", err)
 		}
 
-		if cfg.Server.Port != 11435 {
-			t.Errorf("Port = %d, want default 11435", cfg.Server.Port)
+		if cfg.Server.Port != 12345 {
+			t.Errorf("Port = %d, want default 12345", cfg.Server.Port)
 		}
 	})
 }
@@ -270,15 +273,17 @@ func TestLoad(t *testing.T) {
 	os.Unsetenv("OPENMODEL_LOG_FORMAT")
 
 	t.Run("no config file returns defaults", func(t *testing.T) {
-		os.Unsetenv("OPENMODEL_CONFIG")
+		// Force nonexistent config path to test defaults
+		os.Setenv("OPENMODEL_CONFIG", "/nonexistent/.config/openmodel/config.json")
+		defer os.Unsetenv("OPENMODEL_CONFIG")
 
 		cfg, err := Load()
 		if err != nil {
 			t.Fatalf("Load() error = %v", err)
 		}
 
-		if cfg.Server.Port != 11435 {
-			t.Errorf("Port = %d, want default 11435", cfg.Server.Port)
+		if cfg.Server.Port != 12345 {
+			t.Errorf("Port = %d, want default 12345", cfg.Server.Port)
 		}
 	})
 
@@ -290,8 +295,8 @@ func TestLoad(t *testing.T) {
 			t.Fatalf("Load() error = %v", err)
 		}
 
-		if cfg.Server.Port != 11435 {
-			t.Errorf("Port = %d, want default 11435", cfg.Server.Port)
+		if cfg.Server.Port != 12345 {
+			t.Errorf("Port = %d, want default 12345", cfg.Server.Port)
 		}
 	})
 
@@ -441,6 +446,159 @@ func TestGetSchemaCompiler(t *testing.T) {
 			t.Error("getSchemaCompiler() expected error for nonexistent file")
 		}
 	})
+
+	t.Run("cache hit returns cached compiler", func(t *testing.T) {
+		// Create a minimal valid JSON schema
+		tmpDir := t.TempDir()
+		schemaPath := filepath.Join(tmpDir, "schema_cache.json")
+		schemaContent := `{
+			"$schema": "http://json-schema.org/draft-07/schema#",
+			"type": "object"
+		}`
+		if err := os.WriteFile(schemaPath, []byte(schemaContent), 0644); err != nil {
+			t.Fatalf("failed to write schema: %v", err)
+		}
+
+		// First call - populates cache
+		compiler1, err := getSchemaCompiler(schemaPath)
+		if err != nil {
+			t.Fatalf("first getSchemaCompiler() error = %v", err)
+		}
+
+		// Second call - should return cached compiler
+		compiler2, err := getSchemaCompiler(schemaPath)
+		if err != nil {
+			t.Fatalf("second getSchemaCompiler() error = %v", err)
+		}
+
+		// Both should be the same instance (cache hit)
+		if compiler1 != compiler2 {
+			t.Error("expected same compiler instance on cache hit")
+		}
+	})
+
+	t.Run("different schemas produce different compilers", func(t *testing.T) {
+		// Create two minimal valid JSON schemas
+		tmpDir := t.TempDir()
+		schemaPath1 := filepath.Join(tmpDir, "schema1.json")
+		schemaPath2 := filepath.Join(tmpDir, "schema2.json")
+		schemaContent := `{
+			"$schema": "http://json-schema.org/draft-07/schema#",
+			"type": "object"
+		}`
+
+		if err := os.WriteFile(schemaPath1, []byte(schemaContent), 0644); err != nil {
+			t.Fatalf("failed to write schema1: %v", err)
+		}
+		if err := os.WriteFile(schemaPath2, []byte(schemaContent), 0644); err != nil {
+			t.Fatalf("failed to write schema2: %v", err)
+		}
+
+		// Get compiler for first schema
+		compiler1, err := getSchemaCompiler(schemaPath1)
+		if err != nil {
+			t.Fatalf("getSchemaCompiler(schema1) error = %v", err)
+		}
+
+		// Get compiler for second schema - should be different
+		compiler2, err := getSchemaCompiler(schemaPath2)
+		if err != nil {
+			t.Fatalf("getSchemaCompiler(schema2) error = %v", err)
+		}
+
+		// Different schemas should produce different compilers
+		if compiler1 == compiler2 {
+			t.Error("expected different compiler instances for different schemas")
+		}
+	})
+}
+
+// TestGetSchemaCompilerConcurrent tests thread safety of the schema compiler cache
+func TestGetSchemaCompilerConcurrent(t *testing.T) {
+	// Create a minimal valid JSON schema
+	tmpDir := t.TempDir()
+	schemaPath := filepath.Join(tmpDir, "schema_concurrent.json")
+	schemaContent := `{
+		"$schema": "http://json-schema.org/draft-07/schema#",
+		"type": "object"
+	}`
+	if err := os.WriteFile(schemaPath, []byte(schemaContent), 0644); err != nil {
+		t.Fatalf("failed to write schema: %v", err)
+	}
+
+	// Run multiple concurrent calls - should not panic
+	// This tests the cache is thread-safe
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			defer func() {
+				done <- true
+			}()
+			_, _ = getSchemaCompiler(schemaPath)
+		}()
+	}
+
+	// Wait for all goroutines to complete
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}
+
+// TestLoad_SchemaValidationFailure tests that schema validation failures are detected
+func TestLoad_SchemaValidationFailure(t *testing.T) {
+	// Save original env
+	origConfig := os.Getenv("OPENMODEL_CONFIG")
+	defer func() {
+		if origConfig != "" {
+			os.Setenv("OPENMODEL_CONFIG", origConfig)
+		} else {
+			os.Unsetenv("OPENMODEL_CONFIG")
+		}
+	}()
+
+	// Create temp directory with custom schema that validates port minimum
+	tmpDir := t.TempDir()
+	schemaPath := filepath.Join(tmpDir, "schema.json")
+	schemaContent := `{
+		"$schema": "http://json-schema.org/draft-07/schema#",
+		"type": "object",
+		"properties": {
+			"server": {
+				"type": "object",
+				"properties": {
+					"port": {"type": "integer", "minimum": 1},
+					"host": {"type": "string"}
+				},
+				"required": ["port", "host"]
+			}
+		},
+		"required": ["server"]
+	}`
+	err := os.WriteFile(schemaPath, []byte(schemaContent), 0644)
+	assert.NoError(t, err)
+
+	// Create config that violates schema (port = 0 is below minimum of 1)
+	configPath := filepath.Join(tmpDir, "config.json")
+	configContent := fmt.Sprintf(`{
+		"$schema": "%s",
+		"server": {"port": 0, "host": "localhost"}
+	}`, schemaPath)
+
+	err = os.WriteFile(configPath, []byte(configContent), 0644)
+	assert.NoError(t, err)
+
+	os.Setenv("OPENMODEL_CONFIG", configPath)
+
+	_, err = Load()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "validation failed")
+}
+
+// TestGetSchemaCompiler_InvalidSchemaURL tests error handling for invalid schema URLs
+func TestGetSchemaCompiler_InvalidSchemaURL(t *testing.T) {
+	// Test with malformed schema URL (invalid host that will fail to connect)
+	_, err := getSchemaCompiler("http://invalid:9999/schema.json")
+	assert.Error(t, err)
 }
 
 // BenchmarkDefaultConfig benchmarks the DefaultConfig function - this is the hot path
