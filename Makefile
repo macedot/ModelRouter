@@ -1,0 +1,110 @@
+.PHONY: build test run clean install tag release help cover check
+
+# Variables
+BINARY_NAME=openmodel
+VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_DIR=.
+CMD_DIR=./cmd
+GO:=$(shell which go)
+GOFLAGS=-v
+
+# Default target
+help:
+	@echo "openmodel - OpenAI-compatible proxy server with multi-provider fallback"
+	@echo ""
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@echo "  build     Build the binary (default)"
+	@echo "  test      Run all tests with race detection"
+	@echo "  cover     Generate coverage report"
+	@echo "  check     Run fmt, vet, and test"
+	@echo "  run       Build and run the server"
+	@echo "  clean     Remove built binaries"
+	@echo "  install   Install to /usr/local/bin"
+	@echo "  tag       Create a git tag (usage: make tag VERSION=v0.1.0)"
+	@echo "  release   Create a release (tag + push tag)"
+	@echo ""
+
+# Build the binary
+build:
+	@echo "Building $(BINARY_NAME)..."
+	$(GO) build $(GOFLAGS) -ldflags="-s -w -X main.version=$(VERSION)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+
+# Run all tests
+test:
+	@echo "Running tests..."
+	$(GO) test -race -v -cover ./...
+
+# Generate coverage report
+cover:
+	@echo "Generating coverage report..."
+	$(GO) test -coverprofile=coverage.out ./...
+	@echo "Coverage: $$(go tool cover -func=coverage.out | tail -1 | awk '{print $$3}')"
+	@echo "View HTML report: go tool cover -html=coverage.out"
+
+# All-in-one check
+check: fmt vet test
+	@echo "All checks passed!"
+
+# Build and run the server
+run: build
+	@echo "Running $(BINARY_NAME)..."
+	./$(BINARY_NAME)
+
+# Clean build artifacts
+clean:
+	@echo "Cleaning..."
+	rm -f $(BUILD_DIR)/$(BINARY_NAME)
+	$(GO) clean
+
+# Install to system
+install:
+	@echo "Building $(BINARY_NAME)..."
+	$(GO) build -ldflags="-s -w -X main.version=$(VERSION)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	@echo "Installing $(BINARY_NAME) to /usr/local/bin..."
+	@if [ -w /usr/local/bin ]; then \
+		install -m 755 $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/; \
+	else \
+		echo "Using sudo for installation..."; \
+		sudo install -m 755 $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/; \
+	fi
+
+# Create a git tag
+tag:
+ifndef VERSION
+	@echo "Error: VERSION is required. Usage: make tag VERSION=v0.1.0"
+	@exit 1
+endif
+	@echo "Creating tag $(VERSION)..."
+	git tag -a $(VERSION) -m "Release $(VERSION)"
+	@echo "Tag $(VERSION) created. Run 'make release' to push."
+
+# Create a release (tag + push)
+release:
+ifndef VERSION
+	@echo "Error: VERSION is required. Usage: make release VERSION=v0.1.0"
+	@exit 1
+endif
+	@echo "Creating and pushing release $(VERSION)..."
+	git tag -a $(VERSION) -m "Release $(VERSION)"
+	git push origin $(VERSION)
+	@echo "Release $(VERSION) pushed. Check GitHub Actions for build status."
+
+# Development targets
+dev: build
+	@echo "Running in development mode..."
+	./$(BINARY_NAME)
+
+fmt:
+	@echo "Formatting code..."
+	$(GO) fmt ./...
+
+vet:
+	@echo "Running vet..."
+	$(GO) vet ./...
+
+lint:
+	@echo "Linting..."
+	@which golangci-lint > /dev/null || (echo "Install golangci-lint first" && exit 1)
+	golangci-lint run ./...
