@@ -56,6 +56,24 @@ func (m *mockProvider) StreamChat(ctx context.Context, model string, messages []
 	return ch, nil
 }
 
+func (m *mockProvider) StreamChatRaw(ctx context.Context, model string, messages []openai.ChatCompletionMessage, opts *openai.ChatCompletionRequest) (<-chan []byte, error) {
+	if m.streamChatErr != nil {
+		return nil, m.streamChatErr
+	}
+	ch := make(chan []byte, 10)
+	// Send mock raw SSE data (with "data: " prefix like real providers)
+	go func() {
+		defer close(ch)
+		// First chunk
+		ch <- []byte(`data: {"choices":[{"delta":{"role":"assistant","content":"Hello"},"index":0,"finish_reason":null}]}`)
+		// Second chunk
+		ch <- []byte(`data: {"choices":[{"delta":{"content":" there!","role":"assistant"},"index":0,"finish_reason":"stop"}]}`)
+		// Done
+		ch <- []byte(`data: [DONE]`)
+	}()
+	return ch, nil
+}
+
 func (m *mockProvider) Complete(ctx context.Context, model string, req *openai.CompletionRequest) (*openai.CompletionResponse, error) {
 	if m.completeErr != nil {
 		return nil, m.completeErr

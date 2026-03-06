@@ -204,68 +204,51 @@ func (s *Server) handleV1ChatCompletionsList(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// streamV1ChatCompletions streams chat completions in OpenAI SSE format
+// streamV1ChatCompletions streams chat completions in OpenAI SSE format (transparent proxy)
 func (s *Server) streamV1ChatCompletions(w http.ResponseWriter, r *http.Request, prov provider.Provider, providerModel, providerKey, requestModel string, messages []openai.ChatCompletionMessage, req *openai.ChatCompletionRequest, threshold int) {
-	stream, err := prov.StreamChat(r.Context(), providerModel, messages, req)
+	// Use raw streaming for transparent proxy - no parsing, just forward bytes
+	stream, err := prov.StreamChatRaw(r.Context(), providerModel, messages, req)
 	if err != nil {
-		logger.Error("StreamChat failed", "provider", providerKey, "error", err)
+		logger.Error("StreamChatRaw failed", "provider", providerKey, "error", err)
 		s.state.RecordFailure(providerKey, threshold)
 		handleError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	completionID := "chatcmpl-" + uuid.New().String()[:8]
-	created := time.Now().Unix()
+	// Write SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
 
-	s.streamCommon(w, r, providerKey, requestModel, threshold, completionID, func(flusher http.Flusher) bool {
-		for resp := range stream {
-			// Check if client disconnected
-			if checkClientDisconnect(r) {
-				logger.Info("Client disconnected, closing stream", "provider", providerKey)
-				s.state.RecordFailure(providerKey, threshold)
-				return false
-			}
+	// Flush the headers
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 
-			choices := make([]openai.ChatCompletionChunkChoice, len(resp.Choices))
-			for i, c := range resp.Choices {
-				var role, content string
-				if c.Delta != nil {
-					role = c.Delta.Role
-					content = c.Delta.Content
-				}
-				choices[i] = openai.ChatCompletionChunkChoice{
-					Index: c.Index,
-					Delta: openai.ChatCompletionDelta{
-						Role:    role,
-						Content: content,
-					},
-					FinishReason: func() *string { s := c.FinishReason; return &s }(),
-				}
-			}
-			chunk := openai.ChatCompletionChunk{
-				ID:      completionID,
-				Object:  "chat.completion.chunk",
-				Created: created,
-				Model:   requestModel,
-				Choices: choices,
-			}
-
-			data, err := json.Marshal(chunk)
-			if err != nil {
-				logger.Error("Failed to marshal stream chunk", "provider", providerKey, "error", err)
-				continue
-			}
-			if err := writeSSEChunk(w, flusher, data); err != nil {
-				logger.Error("Failed to write stream chunk", "provider", providerKey, "error", err)
-				s.state.RecordFailure(providerKey, threshold)
-				return false
-			}
+	// Forward raw SSE lines directly to client (already includes "data: " prefix)
+	for line := range stream {
+		// Check if client disconnected
+		if checkClientDisconnect(r) {
+			logger.Info("Client disconnected, closing stream", "provider", providerKey)
+			s.state.RecordFailure(providerKey, threshold)
+			return
 		}
-		return true
-	})
 
-	// Drain remaining messages to unblock provider goroutine
-	defer drainStream(stream)
+		// Write raw line as-is (already in SSE format with "data: " prefix)
+		_, err := fmt.Fprintf(w, "%s\n\n", line)
+		if err != nil {
+			logger.Error("Failed to write stream chunk", "provider", providerKey, "error", err)
+			s.state.RecordFailure(providerKey, threshold)
+			return
+		}
+
+		// Flush to send immediately
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}
 }
 
 // handleV1Completions handles POST /v1/completions

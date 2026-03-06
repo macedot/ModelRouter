@@ -4,7 +4,7 @@ PORT=${PORT:-12345}
 time curl -v -s http://127.0.0.1:${PORT}/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "smart",
+    "model": "local",
     "messages": [
       {
         "role": "system",
