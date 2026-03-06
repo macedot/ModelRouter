@@ -391,48 +391,58 @@ func runTests(providers map[string]provider.Provider, cfg *config.Config, modelN
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	// Determine which models to test
-	modelsToTest := cfg.Models
+	// Determine which providers to test
+	providersToTest := cfg.Providers
 	if modelName != "" {
-		if modelConfig, exists := cfg.Models[modelName]; exists {
-			modelsToTest = map[string]config.ModelConfig{
-				modelName: modelConfig,
+		// If a specific model is given, find which provider has it
+		found := false
+		for name, prov := range cfg.Providers {
+			for _, m := range prov.Models {
+				if m == modelName {
+					providersToTest = map[string]config.ProviderConfig{
+						name: prov,
+					}
+					found = true
+					break
+				}
 			}
-		} else {
-			logger.Error("Model not found", "model", modelName)
+			if found {
+				break
+			}
+		}
+		if !found {
+			logger.Error("Model not found in any provider", "model", modelName)
 			return 1
 		}
 	}
 
-	// Test each model's providers (submodels)
-	for modelName, modelConfig := range modelsToTest {
-		logger.Info("Testing model", "model", modelName)
+	// Test each provider's models
+	for provName, provConfig := range providersToTest {
+		prov, exists := providers[provName]
+		if !exists {
+			logger.Error("Provider not initialized", "provider", provName)
+			failed++
+			continue
+		}
 
-		for _, mp := range modelConfig.Providers {
-			prov, exists := providers[mp.Provider]
-			if !exists {
-				logger.Error("Provider not found", "provider", mp.Provider, "model", modelName)
-				failed++
-				continue
-			}
-
-			logger.Info("Testing submodel", "model", modelName, "provider", mp.Provider, "submodel", mp.Model)
+		for _, model := range provConfig.Models {
+			logger.Info("Testing provider model", "provider", provName, "model", model)
 
 			// Test Chat with "hi" message
-			chatResult := testChatModel(ctx, prov, mp.Model)
+			chatResult := testChatModel(ctx, prov, model)
 
 			if chatResult.Success {
-				logger.Info("Test passed", "model", modelName, "provider", mp.Provider, "submodel", mp.Model, "latency", chatResult.Latency)
+				logger.Info("Test passed", "provider", provName, "model", model, "latency", chatResult.Latency)
 			} else {
 				failed++
-				logger.Error("Test failed", "model", modelName, "provider", mp.Provider, "submodel", mp.Model, "error", chatResult.Error)
+				logger.Error("Test failed", "provider", provName, "model", model, "error", chatResult.Error)
 			}
 		}
 	}
 
 	total := 0
-	for _, modelConfig := range modelsToTest {
-		total += len(modelConfig.Providers)
+	for _, provConfig := range providersToTest {
+		total += len(provConfig.Models)
 	}
 	passed := total - failed
 	logger.Info("Test completed", "total", total, "passed", passed, "failed", failed)

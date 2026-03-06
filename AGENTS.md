@@ -174,6 +174,7 @@ internal/
   "models": {
     "any": {
       "strategy": "round-robin",
+      "default": true,
       "providers": ["ollama/glm-4", "openai/gpt-4"]
     },
     "glm-4": {
@@ -187,6 +188,7 @@ internal/
 **Key features:**
 - **Own models**: Use just model name (e.g., `"glm-4"`) - auto-resolves to first provider with that model
 - **Per-model strategy**: `"fallback"` (default), `"round-robin"`, `"random"`
+- **Default model**: Set `"default": true` to use this model when no model is specified
 - **Provider-specific thresholds**: Override global thresholds per provider
 - **Circular reference detection**: Prevents infinite loops in model resolution
 

@@ -121,6 +121,11 @@
                 "default": "fallback",
                 "description": "Selection strategy for this model"
               },
+              "default": {
+                "type": "boolean",
+                "default": false,
+                "description": "If true, this model is the default when no model is specified"
+              },
               "providers": {
                 "type": "array",
                 "items": {

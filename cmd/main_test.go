@@ -479,6 +479,12 @@ func TestRunConfig_WithValidConfig(t *testing.T) {
 
 // TestRunConfig_WithRealConfig tests runConfig using the existing config in the environment
 func TestRunConfig_WithRealConfig(t *testing.T) {
+	// Skip if no config file exists (e.g., on CI)
+	configPath := config.GetConfigPath()
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		t.Skip("config file not found, skipping test")
+	}
+
 	oldEnv := os.Getenv("OPENMODEL_CONFIG")
 	os.Unsetenv("OPENMODEL_CONFIG")
 	defer func() {

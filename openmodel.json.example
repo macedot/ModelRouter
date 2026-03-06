@@ -1,42 +1,55 @@
 {
-  "$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
   "server": {
     "port": 12345,
     "host": "localhost"
   },
   "providers": {
-    "local": {
-      "url": "http://localhost:11434/v1",
-      "apiKey": ""
-    },
-    "openai": {
-      "url": "https://api.openai.com/v1",
-      "apiKey": "${OPENAI_API_KEY}"
-    },
     "ollama": {
       "url": "http://127.0.0.1:11434/v1",
-      "apiKey": ""
+      "models": [
+        "glm-5:cloud",
+        "minimax-m2.5:cloud"
+      ]
+    },
+    "opencode": {
+      "url": "https://opencode.ai/zen/v1",
+      "models": [
+        "minimax-m2.5-free",
+        "opencode/big-pickle",
+        "opencode/gpt-5-nano",
+      ]
     }
   },
   "models": {
-    "gpt-4": [
-      { "provider": "openai", "model": "gpt-4" }
-    ],
-    "gpt-3.5": [
-      { "provider": "openai", "model": "gpt-3.5-turbo" }
-    ],
-    "llama2": [
-      { "provider": "local", "model": "llama2" }
-    ],
-    "llama3": [
-      { "provider": "ollama", "model": "llama3" }
-    ]
+    "any": {
+      "strategy": "fallback",
+      "providers": [
+        "opencode/minimax-m2.5-free",
+        "opencode/big-pickle",
+        "opencode/gpt-5-nano",
+        "ollama/glm-5:cloud",
+      ]
+    },
+    "glm-5": {
+      "strategy": "fallback",
+      "providers": [
+        "ollama/glm-5:cloud",
+      ]
+    },
+    "minimax-m2.5": {
+      "strategy": "fallback",
+      "providers": [
+        "opencode/minimax-m2.5-free",
+        "ollama/minimax-m2.5:cloud",
+      ]
+    }
   },
   "thresholds": {
     "failures_before_switch": 3,
     "initial_timeout_ms": 10000,
     "max_timeout_ms": 300000
   },
-  "log_level": "info",
+  "log_level": "debug",
   "log_format": "text"
 }

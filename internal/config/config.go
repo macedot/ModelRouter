@@ -27,6 +27,7 @@ type Config struct {
 // ModelConfig holds configuration for a model alias
 type ModelConfig struct {
 	Strategy  string          `json:"strategy"`  // "fallback" | "round-robin" | "random", default "fallback"
+	Default   bool            `json:"default"`   // If true, this model is the default when no model is specified
 	Providers []ModelProvider `json:"providers"` // Resolved model providers
 }
 

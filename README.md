@@ -38,7 +38,7 @@ Run with mounted config:
 ```bash
 docker run -d \
   -p 12345:12345 \
-  -v ~/.config/openmodel/config.json:/root/.config/openmodel/config.json:ro \
+  -v ~/.config/openmodel/openmodel.json:/root/.config/openmodel/openmodel.json:ro \
   ghcr.io/macedot/openmodel:latest
 ```
 
@@ -68,32 +68,35 @@ sudo make install
 
 ## Configuration
 
-Create `~/.config/openmodel/config.json`:
+Create `~/.config/openmodel/openmodel.json`:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
   "server": {
     "port": 12345,
     "host": "localhost"
   },
   "providers": {
-    "local": {
+    "ollama": {
       "url": "http://localhost:11434/v1",
-      "apiKey": ""
+      "models": ["llama2", "mistral"]
     },
     "openai": {
       "url": "https://api.openai.com/v1",
-      "apiKey": "${OPENAI_API_KEY}"
+      "apiKey": "${OPENAI_API_KEY}",
+      "models": ["gpt-4", "gpt-3.5-turbo"]
     }
   },
   "models": {
-    "gpt-4": [
-      { "provider": "openai", "model": "gpt-4" }
-    ],
-    "llama2": [
-      { "provider": "local", "model": "llama2" }
-    ]
+    "any": {
+      "strategy": "round-robin",
+      "default": true,
+      "providers": ["ollama/llama2", "openai/gpt-4"]
+    },
+    "gpt-4": {
+      "providers": ["openai/gpt-4"]
+    }
   },
   "thresholds": {
     "failures_before_switch": 3,
@@ -104,6 +107,14 @@ Create `~/.config/openmodel/config.json`:
   "log_format": "text"
 }
 ```
+
+### Configuration Options
+
+- **Config file**: Searches `openmodel.json` in current directory first, then `~/.config/openmodel/openmodel.json`
+- **Providers**: Define available providers with their URLs, API keys, and available models
+- **Models**: Map model aliases to provider models with selection strategy
+- **Strategy**: `"fallback"` (default), `"round-robin"`, or `"random"`
+- **Default model**: Set `"default": true` to use when no model is specified
 
 ## Usage
 
@@ -206,4 +217,4 @@ make release VERSION=v1.0.0
 
 ## License
 
-MIT
+GNU General Public License v3.0 (GPLv3)
