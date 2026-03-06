@@ -103,6 +103,12 @@ Create `~/.config/openmodel/openmodel.json`:
     "initial_timeout_ms": 10000,
     "max_timeout_ms": 300000
   },
+  "rate_limit": {
+    "enabled": true,
+    "requests_per_second": 10,
+    "burst": 20,
+    "cleanup_interval_ms": 60000
+  },
   "log_level": "info",
   "log_format": "text"
 }
@@ -115,6 +121,19 @@ Create `~/.config/openmodel/openmodel.json`:
 - **Models**: Map model aliases to provider models with selection strategy
 - **Strategy**: `"fallback"` (default), `"round-robin"`, or `"random"`
 - **Default model**: Set `"default": true` to use when no model is specified
+- **Rate limiting**: Configure per-IP rate limiting to prevent abuse
+  - `enabled`: Enable/disable rate limiting
+  - `requests_per_second`: Maximum requests per IP per second
+  - `burst`: Maximum burst size (bucket capacity)
+  - `cleanup_interval_ms`: How often to clean up stale IP entries
+- **HTTP client**: Configure HTTP connection pool settings
+  - `timeout_seconds`: Request timeout (default: 120s)
+  - `max_idle_conns`: Maximum idle connections (default: 100)
+  - `max_idle_conns_per_host`: Max idle connections per host (default: 100)
+- **Limits**: Configure request/response size limits
+  - `max_request_body_bytes`: Max request body size (default: 50MB)
+  - `max_response_body_bytes`: Max response body size (default: 1MB)
+  - `max_stream_buffer_bytes`: Max stream buffer size (default: 1MB)
 
 ## Usage
 

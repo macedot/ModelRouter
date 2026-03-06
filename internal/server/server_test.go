@@ -436,6 +436,22 @@ func TestSetGetProviderContext(t *testing.T) {
 			t.Errorf("expected empty model, got %q", model)
 		}
 	})
+
+	t.Run("corrupted context values (wrong types)", func(t *testing.T) {
+		ctx := context.Background()
+		// Set wrong types in context - should not panic
+		ctx = context.WithValue(ctx, ctxKeyProvider, 123456)           // int instead of string
+		ctx = context.WithValue(ctx, ctxKeyModel, []string{"invalid"}) // slice instead of string
+
+		// This should not panic and return empty strings
+		provider, model := getProviderFromContext(ctx)
+		if provider != "" {
+			t.Errorf("expected empty provider for wrong type, got %q", provider)
+		}
+		if model != "" {
+			t.Errorf("expected empty model for wrong type, got %q", model)
+		}
+	})
 }
 
 // TestLoggingMiddleware tests the loggingMiddleware

@@ -72,23 +72,52 @@ type OpenAIProvider struct {
 	httpClient *http.Client
 }
 
+// HTTPConfig holds HTTP client configuration
+type HTTPConfig struct {
+	TimeoutSeconds               int
+	MaxIdleConns                 int
+	MaxIdleConnsPerHost          int
+	IdleConnTimeoutSeconds       int
+	DialTimeoutSeconds           int
+	TLSHandshakeTimeoutSeconds   int
+	ResponseHeaderTimeoutSeconds int
+}
+
+// DefaultHTTPConfig returns the default HTTP configuration
+func DefaultHTTPConfig() HTTPConfig {
+	return HTTPConfig{
+		TimeoutSeconds:               120,
+		MaxIdleConns:                 100,
+		MaxIdleConnsPerHost:          100,
+		IdleConnTimeoutSeconds:       90,
+		DialTimeoutSeconds:           10,
+		TLSHandshakeTimeoutSeconds:   10,
+		ResponseHeaderTimeoutSeconds: 30,
+	}
+}
+
 // NewOpenAIProvider creates a new OpenAI-compatible provider
 func NewOpenAIProvider(name, baseURL, apiKey string) *OpenAIProvider {
+	return NewOpenAIProviderWithConfig(name, baseURL, apiKey, DefaultHTTPConfig())
+}
+
+// NewOpenAIProviderWithConfig creates a new OpenAI-compatible provider with custom HTTP config
+func NewOpenAIProviderWithConfig(name, baseURL, apiKey string, httpConfig HTTPConfig) *OpenAIProvider {
 	return &OpenAIProvider{
 		name:    name,
 		baseURL: strings.TrimSuffix(baseURL, "/"),
 		apiKey:  apiKey,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: time.Duration(httpConfig.TimeoutSeconds) * time.Second,
 			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     90 * time.Second,
+				MaxIdleConns:        httpConfig.MaxIdleConns,
+				MaxIdleConnsPerHost: httpConfig.MaxIdleConnsPerHost,
+				IdleConnTimeout:     time.Duration(httpConfig.IdleConnTimeoutSeconds) * time.Second,
 				DialContext: (&net.Dialer{
-					Timeout: 10 * time.Second,
+					Timeout: time.Duration(httpConfig.DialTimeoutSeconds) * time.Second,
 				}).DialContext,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 30 * time.Second,
+				TLSHandshakeTimeout:   time.Duration(httpConfig.TLSHandshakeTimeoutSeconds) * time.Second,
+				ResponseHeaderTimeout: time.Duration(httpConfig.ResponseHeaderTimeoutSeconds) * time.Second,
 			},
 		},
 	}
@@ -99,7 +128,7 @@ func (p *OpenAIProvider) Name() string {
 	return p.name
 }
 
-func (p *OpenAIProvider) buildRequest(body []byte, path string) (*http.Request, error) {
+func (p *OpenAIProvider) buildRequest(ctx context.Context, body []byte, path string) (*http.Request, error) {
 	req, err := http.NewRequest("POST", p.baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -108,8 +137,14 @@ func (p *OpenAIProvider) buildRequest(body []byte, path string) (*http.Request, 
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
-	return req, nil
+	// Propagate request ID for distributed tracing
+	if requestID, ok := ctx.Value(ctxKeyRequestID{}).(string); ok && requestID != "" {
+		req.Header.Set("X-Request-ID", requestID)
+	}
+	return req.WithContext(ctx), nil
 }
+
+type ctxKeyRequestID struct{}
 
 func (p *OpenAIProvider) doRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
 	resp, err := p.httpClient.Do(req.WithContext(ctx))
@@ -277,7 +312,7 @@ func (p *OpenAIProvider) Chat(ctx context.Context, model string, messages []open
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := p.buildRequest(body, "/chat/completions")
+	httpReq, err := p.buildRequest(ctx, body, "/chat/completions")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -319,7 +354,7 @@ func (p *OpenAIProvider) StreamChat(ctx context.Context, model string, messages 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := p.buildRequest(body, "/chat/completions")
+	httpReq, err := p.buildRequest(ctx, body, "/chat/completions")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -380,7 +415,7 @@ func (p *OpenAIProvider) StreamChatRaw(ctx context.Context, model string, messag
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := p.buildRequest(body, "/chat/completions")
+	httpReq, err := p.buildRequest(ctx, body, "/chat/completions")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -435,7 +470,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, model string, req *openai
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := p.buildRequest(body, "/completions")
+	httpReq, err := p.buildRequest(ctx, body, "/completions")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -468,7 +503,7 @@ func (p *OpenAIProvider) StreamComplete(ctx context.Context, model string, req *
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := p.buildRequest(body, "/completions")
+	httpReq, err := p.buildRequest(ctx, body, "/completions")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -513,7 +548,7 @@ func (p *OpenAIProvider) Embed(ctx context.Context, model string, input []string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := p.buildRequest(body, "/embeddings")
+	httpReq, err := p.buildRequest(ctx, body, "/embeddings")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -547,7 +582,7 @@ func (p *OpenAIProvider) Moderate(ctx context.Context, input string) (*openai.Mo
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := p.buildRequest(body, "/moderations")
+	httpReq, err := p.buildRequest(ctx, body, "/moderations")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

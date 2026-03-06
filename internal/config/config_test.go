@@ -885,3 +885,106 @@ func TestModelValidation(t *testing.T) {
 		assert.Contains(t, err.Error(), "not found in provider")
 	})
 }
+
+// TestValidateProviderReferences tests the ValidateProviderReferences function
+func TestValidateProviderReferences(t *testing.T) {
+	t.Run("valid references", func(t *testing.T) {
+		cfg := &Config{
+			Providers: map[string]ProviderConfig{
+				"openai": {URL: "https://api.openai.com/v1"},
+				"ollama": {URL: "http://localhost:11434/v1"},
+			},
+			Models: map[string]ModelConfig{
+				"gpt-4": {
+					Strategy: StrategyFallback,
+					Providers: []ModelProvider{
+						{Provider: "openai", Model: "gpt-4"},
+						{Provider: "ollama", Model: "llama2"},
+					},
+				},
+			},
+		}
+
+		err := cfg.ValidateProviderReferences()
+		assert.NoError(t, err)
+	})
+
+	t.Run("missing provider reference", func(t *testing.T) {
+		cfg := &Config{
+			Providers: map[string]ProviderConfig{
+				"openai": {URL: "https://api.openai.com/v1"},
+			},
+			Models: map[string]ModelConfig{
+				"gpt-4": {
+					Strategy: StrategyFallback,
+					Providers: []ModelProvider{
+						{Provider: "openai", Model: "gpt-4"},
+						{Provider: "missing", Model: "claude"}, // This provider doesn't exist
+					},
+				},
+			},
+		}
+
+		err := cfg.ValidateProviderReferences()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "missing")
+		assert.Contains(t, err.Error(), `"gpt-4"`)
+	})
+
+	t.Run("multiple missing providers", func(t *testing.T) {
+		cfg := &Config{
+			Providers: map[string]ProviderConfig{
+				"local": {URL: "http://localhost:11434/v1"},
+			},
+			Models: map[string]ModelConfig{
+				"model1": {
+					Strategy: StrategyFallback,
+					Providers: []ModelProvider{
+						{Provider: "missing1", Model: "m1"},
+					},
+				},
+				"model2": {
+					Strategy: StrategyFallback,
+					Providers: []ModelProvider{
+						{Provider: "missing2", Model: "m2"},
+					},
+				},
+			},
+		}
+
+		err := cfg.ValidateProviderReferences()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "missing1")
+		assert.Contains(t, err.Error(), "missing2")
+	})
+
+	t.Run("empty models", func(t *testing.T) {
+		cfg := &Config{
+			Providers: map[string]ProviderConfig{
+				"openai": {URL: "https://api.openai.com/v1"},
+			},
+			Models: map[string]ModelConfig{},
+		}
+
+		err := cfg.ValidateProviderReferences()
+		assert.NoError(t, err)
+	})
+
+	t.Run("empty providers", func(t *testing.T) {
+		cfg := &Config{
+			Providers: map[string]ProviderConfig{},
+			Models: map[string]ModelConfig{
+				"gpt-4": {
+					Strategy: StrategyFallback,
+					Providers: []ModelProvider{
+						{Provider: "openai", Model: "gpt-4"},
+					},
+				},
+			},
+		}
+
+		err := cfg.ValidateProviderReferences()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "openai")
+	})
+}

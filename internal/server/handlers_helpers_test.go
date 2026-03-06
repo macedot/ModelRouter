@@ -240,3 +240,59 @@ func TestFindAllAvailableProviders(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateModel(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Models = map[string]config.ModelConfig{
+		"gpt-4":         {Strategy: "fallback", Providers: []config.ModelProvider{{Provider: "openai", Model: "gpt-4"}}},
+		"gpt-3.5-turbo": {Strategy: "fallback", Providers: []config.ModelProvider{{Provider: "openai", Model: "gpt-3.5-turbo"}}},
+	}
+
+	s := &Server{config: cfg}
+
+	t.Run("valid model", func(t *testing.T) {
+		err := s.validateModel("gpt-4")
+		assert.NoError(t, err)
+	})
+
+	t.Run("another valid model", func(t *testing.T) {
+		err := s.validateModel("gpt-3.5-turbo")
+		assert.NoError(t, err)
+	})
+
+	t.Run("invalid model", func(t *testing.T) {
+		err := s.validateModel("nonexistent-model")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+		assert.Contains(t, err.Error(), "nonexistent-model")
+	})
+
+	t.Run("empty model name", func(t *testing.T) {
+		err := s.validateModel("")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+	})
+}
+
+func TestModelNotFoundError(t *testing.T) {
+	err := modelNotFoundError("gpt-5")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "gpt-5")
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestIsModelNotFoundError(t *testing.T) {
+	t.Run("model not found error", func(t *testing.T) {
+		err := modelNotFoundError("test-model")
+		assert.True(t, isModelNotFoundError(err))
+	})
+
+	t.Run("other error", func(t *testing.T) {
+		err := assert.AnError
+		assert.False(t, isModelNotFoundError(err))
+	})
+
+	t.Run("nil error", func(t *testing.T) {
+		assert.False(t, isModelNotFoundError(nil))
+	})
+}

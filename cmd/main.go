@@ -139,8 +139,20 @@ func parseCommandFlags(args []string, usage func()) error {
 // initProviders creates and initializes all configured providers
 func initProviders(cfg *config.Config) map[string]provider.Provider {
 	providers := make(map[string]provider.Provider)
+
+	// Convert config.HTTP to provider.HTTPConfig
+	httpConfig := provider.HTTPConfig{
+		TimeoutSeconds:               cfg.HTTP.TimeoutSeconds,
+		MaxIdleConns:                 cfg.HTTP.MaxIdleConns,
+		MaxIdleConnsPerHost:          cfg.HTTP.MaxIdleConnsPerHost,
+		IdleConnTimeoutSeconds:       cfg.HTTP.IdleConnTimeoutSeconds,
+		DialTimeoutSeconds:           cfg.HTTP.DialTimeoutSeconds,
+		TLSHandshakeTimeoutSeconds:   cfg.HTTP.TLSHandshakeTimeoutSeconds,
+		ResponseHeaderTimeoutSeconds: cfg.HTTP.ResponseHeaderTimeoutSeconds,
+	}
+
 	for name, pc := range cfg.Providers {
-		providers[name] = provider.NewOpenAIProvider(name, pc.URL, pc.APIKey)
+		providers[name] = provider.NewOpenAIProviderWithConfig(name, pc.URL, pc.APIKey, httpConfig)
 		logger.Info("Provider initialized", "name", name, "url", pc.URL)
 	}
 	return providers
@@ -193,6 +205,11 @@ func runServer(configPath *string) {
 
 	if err := logger.Init(cfg.LogLevel, cfg.LogFormat); err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	// Validate all provider references exist
+	if err := cfg.ValidateProviderReferences(); err != nil {
+		log.Fatalf("Configuration error:\n%v", err)
 	}
 
 	providers := initProviders(cfg)

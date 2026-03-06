@@ -115,7 +115,9 @@ jobs:
         uses: sigstore/cosign-installer@v3.5.0
 
       - name: Install syft
-        uses: anchore/sbom-action/install-syft@v0.15.11
+        uses: anchore/sbom-action@v0.17.9
+        with:
+          install-only: true
 
       - name: Sign Docker image
         run: |

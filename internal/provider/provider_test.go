@@ -1469,7 +1469,8 @@ func TestBuildRequest(t *testing.T) {
 		provider := NewOpenAIProvider("test", "http://localhost:8080", "test-key")
 
 		body := []byte(`{"model":"gpt-4"}`)
-		req, err := provider.buildRequest(body, "/chat/completions")
+		ctx := context.Background()
+		req, err := provider.buildRequest(ctx, body, "/chat/completions")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1486,7 +1487,8 @@ func TestBuildRequest(t *testing.T) {
 		provider := NewOpenAIProvider("test", "http://localhost:8080", "")
 
 		body := []byte(`{"model":"gpt-4"}`)
-		req, err := provider.buildRequest(body, "/chat/completions")
+		ctx := context.Background()
+		req, err := provider.buildRequest(ctx, body, "/chat/completions")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -1500,7 +1502,8 @@ func TestBuildRequest(t *testing.T) {
 		provider := NewOpenAIProvider("test", "http://localhost:8080/", "test-key")
 
 		body := []byte(`{"model":"gpt-4"}`)
-		req, err := provider.buildRequest(body, "/chat/completions")
+		ctx := context.Background()
+		req, err := provider.buildRequest(ctx, body, "/chat/completions")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

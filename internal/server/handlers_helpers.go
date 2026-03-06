@@ -146,6 +146,15 @@ func modelNotFoundError(model string) error {
 	return fmt.Errorf("model %q not found", model)
 }
 
+// validateModel checks if a model exists in the configuration.
+// Returns nil if valid, error if model not found.
+func (s *Server) validateModel(model string) error {
+	if _, exists := s.config.Models[model]; !exists {
+		return modelNotFoundError(model)
+	}
+	return nil
+}
+
 // encodeJSON encodes v as JSON with proper error handling.
 // Sets Content-Type header automatically.
 func encodeJSON(w http.ResponseWriter, v any) error {

@@ -20,8 +20,9 @@ import (
 type ctxKey string
 
 const (
-	ctxKeyProvider ctxKey = "provider"
-	ctxKeyModel    ctxKey = "model"
+	ctxKeyProvider  ctxKey = "provider"
+	ctxKeyModel     ctxKey = "model"
+	ctxKeyRequestID ctxKey = "request_id"
 )
 
 // Server represents the HTTP server
@@ -31,6 +32,7 @@ type Server struct {
 	state       *state.State
 	httpServer  *http.Server
 	providersMu sync.RWMutex
+	limiter     *RateLimiter
 }
 
 // setProviderContext sets provider/model info in context for logging
@@ -42,21 +44,40 @@ func setProviderContext(ctx context.Context, providerName, modelName string) con
 // getProviderFromContext retrieves provider/model info from context
 func getProviderFromContext(ctx context.Context) (provider, model string) {
 	if v := ctx.Value(ctxKeyProvider); v != nil {
-		provider = v.(string)
+		if s, ok := v.(string); ok {
+			provider = s
+		}
 	}
 	if v := ctx.Value(ctxKeyModel); v != nil {
-		model = v.(string)
+		if s, ok := v.(string); ok {
+			model = s
+		}
 	}
 	return
 }
 
 // New creates a new server with the given configuration, providers, and state
 func New(cfg *config.Config, providers map[string]provider.Provider, stateMgr *state.State) *Server {
-	return &Server{
+	srv := &Server{
 		config:    cfg,
 		providers: providers,
 		state:     stateMgr,
 	}
+
+	// Initialize rate limiter if enabled
+	if cfg.RateLimit != nil && cfg.RateLimit.Enabled {
+		cleanupInterval := 60 * time.Second
+		if cfg.RateLimit.CleanupIntervalMs > 0 {
+			cleanupInterval = time.Duration(cfg.RateLimit.CleanupIntervalMs) * time.Millisecond
+		}
+		srv.limiter = NewRateLimiter(
+			cfg.RateLimit.RequestsPerSecond,
+			cfg.RateLimit.Burst,
+			cleanupInterval,
+		)
+	}
+
+	return srv
 }
 
 // loggingMiddleware logs HTTP requests and responses
@@ -72,6 +93,9 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 			requestID = uuid.New().String()[:8]
 		}
 		w.Header().Set("X-Request-ID", requestID)
+
+		// Add request ID to context for propagation
+		*r = *r.WithContext(context.WithValue(r.Context(), ctxKeyRequestID, requestID))
 
 		// Read request body for potential logging (max 10MiB)
 		const maxBodySize = 10 * 1024 * 1024
@@ -153,14 +177,19 @@ func (s *Server) Start() error {
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 
+	// Build handler chain: rate limit -> logging -> routes
+	handler := http.Handler(mux)
+	handler = s.loggingMiddleware(handler)
+	handler = s.rateLimitMiddleware(handler)
+
 	addr := fmt.Sprintf("%s:%d", s.config.Server.Host, s.config.Server.Port)
 	s.httpServer = &http.Server{
 		Addr:           addr,
-		Handler:        s.loggingMiddleware(mux),
-		ReadTimeout:    30 * time.Second,
-		WriteTimeout:   120 * time.Second,
-		IdleTimeout:    120 * time.Second,
-		MaxHeaderBytes: 1 << 20, // 1MB - prevent header-based DoS
+		Handler:        handler,
+		ReadTimeout:    DefaultReadTimeout,
+		WriteTimeout:   DefaultWriteTimeout,
+		IdleTimeout:    DefaultIdleTimeout,
+		MaxHeaderBytes: DefaultMaxHeaderBytes,
 	}
 
 	return s.httpServer.ListenAndServe()

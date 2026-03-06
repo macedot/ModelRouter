@@ -39,7 +39,7 @@ func (s *Server) handleV1Messages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if model exists in config
-	if _, exists := s.config.Models[req.Model]; !exists {
+	if err := s.validateModel(req.Model); err != nil {
 		// Return Claude API style error
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)

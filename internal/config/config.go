@@ -22,6 +22,48 @@ type Config struct {
 	LogLevel   string                    `json:"log_level"`
 	LogFormat  string                    `json:"log_format"`
 	Thresholds ThresholdsConfig          `json:"thresholds"`
+	RateLimit  *RateLimitConfig          `json:"rate_limit,omitempty"`
+	HTTP       HTTPConfig                `json:"http,omitempty"`
+	Limits     LimitsConfig              `json:"limits,omitempty"`
+}
+
+// RateLimitConfig holds rate limiting configuration
+type RateLimitConfig struct {
+	Enabled           bool `json:"enabled"`
+	RequestsPerSecond int  `json:"requests_per_second"`
+	Burst             int  `json:"burst"`
+	CleanupIntervalMs int  `json:"cleanup_interval_ms"`
+}
+
+// HTTPConfig holds HTTP client configuration
+type HTTPConfig struct {
+	TimeoutSeconds               int `json:"timeout_seconds"`
+	MaxIdleConns                 int `json:"max_idle_conns"`
+	MaxIdleConnsPerHost          int `json:"max_idle_conns_per_host"`
+	IdleConnTimeoutSeconds       int `json:"idle_conn_timeout_seconds"`
+	DialTimeoutSeconds           int `json:"dial_timeout_seconds"`
+	TLSHandshakeTimeoutSeconds   int `json:"tls_handshake_timeout_seconds"`
+	ResponseHeaderTimeoutSeconds int `json:"response_header_timeout_seconds"`
+}
+
+// LimitsConfig holds request/response size limits
+type LimitsConfig struct {
+	MaxRequestBodyBytes  int64 `json:"max_request_body_bytes"`  // Max request body size in bytes
+	MaxResponseBodyBytes int64 `json:"max_response_body_bytes"` // Max response body size in bytes
+	MaxStreamBufferBytes int64 `json:"max_stream_buffer_bytes"` // Max stream buffer size in bytes
+}
+
+// GetLimits returns the limits config, using defaults if not set
+func (c *Config) GetLimits() LimitsConfig {
+	if c.Limits.MaxRequestBodyBytes == 0 {
+		// Return defaults
+		return LimitsConfig{
+			MaxRequestBodyBytes:  50 * 1024 * 1024, // 50MB
+			MaxResponseBodyBytes: 1 * 1024 * 1024,  // 1MB
+			MaxStreamBufferBytes: 1 * 1024 * 1024,  // 1MB
+		}
+	}
+	return c.Limits
 }
 
 // ModelConfig holds configuration for a model alias
@@ -86,14 +128,6 @@ type ProviderConfig struct {
 type ModelProvider struct {
 	Provider string `json:"provider"` // Provider name from providers config
 	Model    string `json:"model"`    // Model name on that provider
-}
-
-// convertModelsField is a helper to set the models field (avoids type conflict)
-func convertModelsField(cfg *Config, modelName string, models []ModelProvider) error {
-	// We need to use reflection or a different approach since
-	// Models is map[string][]ProviderModel but we want []ModelProvider
-	// Actually, let's just change the approach - use a temporary map
-	return nil // Placeholder - will be handled differently
 }
 
 // ProviderModel represents a model in "provider/model" format
@@ -237,7 +271,7 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 	var schemaData any
 
 	if strings.HasPrefix(schemaURL, "http://") || strings.HasPrefix(schemaURL, "https://") {
-		client := &http.Client{Timeout: 10 * time.Second}
+		client := &http.Client{Timeout: 5 * time.Second} // Reduced timeout for better availability
 		resp, err := client.Get(schemaURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch schema: %w", err)
@@ -305,6 +339,20 @@ func DefaultConfig() *Config {
 			FailuresBeforeSwitch: 3,
 			InitialTimeout:       10000,
 			MaxTimeout:           300000,
+		},
+		HTTP: HTTPConfig{
+			TimeoutSeconds:               120,
+			MaxIdleConns:                 100,
+			MaxIdleConnsPerHost:          100,
+			IdleConnTimeoutSeconds:       90,
+			DialTimeoutSeconds:           10,
+			TLSHandshakeTimeoutSeconds:   10,
+			ResponseHeaderTimeoutSeconds: 30,
+		},
+		Limits: LimitsConfig{
+			MaxRequestBodyBytes:  50 * 1024 * 1024, // 50MB
+			MaxResponseBodyBytes: 1 * 1024 * 1024,  // 1MB
+			MaxStreamBufferBytes: 1 * 1024 * 1024,  // 1MB
 		},
 	}
 }
@@ -509,25 +557,26 @@ func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 	}
 
 	// Validate schema if enabled
-	if validateSchema {
+	if validateSchema && schemaConfig.Schema != "" {
 		// Get schema compiler
 		compiler, err := getSchemaCompiler(schemaConfig.Schema)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load schema: %w", err)
-		}
+			// Log warning but continue - schema validation is not critical
+			fmt.Fprintf(os.Stderr, "Warning: schema validation unavailable: %v\n", err)
+		} else if compiler != nil {
+			compiledSchema, err := compiler.Compile(schemaConfig.Schema)
+			if err != nil {
+				return nil, fmt.Errorf("failed to compile schema: %w", err)
+			}
 
-		compiledSchema, err := compiler.Compile(schemaConfig.Schema)
-		if err != nil {
-			return nil, fmt.Errorf("failed to compile schema: %w", err)
-		}
-
-		// Validate config against schema
-		var configData any
-		if err := json.Unmarshal(data, &configData); err != nil {
-			return nil, fmt.Errorf("failed to parse config data: %w", err)
-		}
-		if err := compiledSchema.Validate(configData); err != nil {
-			return nil, fmt.Errorf("config validation failed: %w", err)
+			// Validate config against schema
+			var configData any
+			if err := json.Unmarshal(data, &configData); err != nil {
+				return nil, fmt.Errorf("failed to parse config data: %w", err)
+			}
+			if err := compiledSchema.Validate(configData); err != nil {
+				return nil, fmt.Errorf("config validation failed: %w", err)
+			}
 		}
 	}
 
@@ -620,4 +669,28 @@ func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// ValidateProviderReferences checks that all model providers are defined
+// in the providers section. Returns an error with details if any references
+// are invalid.
+func (c *Config) ValidateProviderReferences() error {
+	var errs []string
+
+	for modelName, modelConfig := range c.Models {
+		for i, providerRef := range modelConfig.Providers {
+			// Check provider exists
+			if _, exists := c.Providers[providerRef.Provider]; !exists {
+				errs = append(errs, fmt.Sprintf(
+					"  model %q providers[%d] references undefined provider %q",
+					modelName, i, providerRef.Provider))
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("provider validation failed:\n%s",
+			strings.Join(errs, "\n"))
+	}
+	return nil
 }

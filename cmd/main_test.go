@@ -244,7 +244,9 @@ func TestRunTestNoConfig(t *testing.T) {
 	cfg, err := config.Load()
 
 	if err == nil {
-		t.Logf("Config loaded in test environment: %+v", cfg)
+		// Don't log full config - may contain sensitive data like API keys
+		t.Logf("Config loaded successfully (providers: %d, models: %d)",
+			len(cfg.Providers), len(cfg.Models))
 	} else {
 		t.Logf("Expected error (no config): %v", err)
 	}

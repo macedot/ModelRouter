@@ -123,8 +123,8 @@ func (s *Server) handleV1Model(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if model exists
-	if _, exists := s.config.Models[modelName]; !exists {
-		handleError(w, modelNotFoundError(modelName).Error(), http.StatusNotFound)
+	if err := s.validateModel(modelName); err != nil {
+		handleError(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
@@ -159,8 +159,8 @@ func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request)
 		}
 
 		// Check if model exists before trying providers
-		if _, exists := s.config.Models[req.Model]; !exists {
-			handleError(w, modelNotFoundError(req.Model).Error(), http.StatusNotFound)
+		if err := s.validateModel(req.Model); err != nil {
+			handleError(w, err.Error(), http.StatusNotFound)
 			return
 		}
 
@@ -214,6 +214,13 @@ func (s *Server) streamV1ChatCompletions(w http.ResponseWriter, r *http.Request,
 		handleError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Ensure stream is drained to prevent goroutine leaks
+	defer func() {
+		for range stream {
+			// discard remaining messages
+		}
+	}()
 
 	// Write SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
