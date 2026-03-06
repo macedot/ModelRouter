@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/macedot/openmodel/internal/api/openai"
 	"github.com/macedot/openmodel/internal/config"
 	"github.com/macedot/openmodel/internal/logger"
@@ -165,15 +163,18 @@ func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request)
 		}
 
 		if req.Stream {
-			// For streaming, find provider and delegate to streaming handler
-			prov, providerKey, providerModel, err := s.findProviderWithFailover(req.Model, "")
+			// For streaming, use streamWithFailover for automatic retry
+			err := s.streamWithFailover(w, r, req.Model, "",
+				func(ctx context.Context, prov provider.Provider, providerModel string) (<-chan []byte, error) {
+					return prov.StreamChatRaw(ctx, providerModel, req.Messages, &req)
+				},
+				func(w http.ResponseWriter, r *http.Request, stream <-chan []byte, providerKey string) error {
+					return writeRawStream(w, r, stream, providerKey)
+				},
+			)
 			if err != nil {
 				s.handleAllProvidersFailed(w, err)
-				return
 			}
-			threshold := s.config.GetThresholds(providerKey).FailuresBeforeSwitch
-			*r = *r.WithContext(setProviderContext(r.Context(), providerKey, req.Model))
-			s.streamV1ChatCompletions(w, r, prov, providerModel, providerKey, req.Model, req.Messages, &req, threshold)
 			return
 		}
 
@@ -202,60 +203,6 @@ func (s *Server) handleV1ChatCompletionsList(w http.ResponseWriter, r *http.Requ
 		"object": "list",
 		"data":   []interface{}{},
 	})
-}
-
-// streamV1ChatCompletions streams chat completions in OpenAI SSE format (transparent proxy)
-func (s *Server) streamV1ChatCompletions(w http.ResponseWriter, r *http.Request, prov provider.Provider, providerModel, providerKey, requestModel string, messages []openai.ChatCompletionMessage, req *openai.ChatCompletionRequest, threshold int) {
-	// Use raw streaming for transparent proxy - no parsing, just forward bytes
-	stream, err := prov.StreamChatRaw(r.Context(), providerModel, messages, req)
-	if err != nil {
-		logger.Error("StreamChatRaw failed", "provider", providerKey, "error", err)
-		s.state.RecordFailure(providerKey, threshold)
-		handleError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Ensure stream is drained to prevent goroutine leaks
-	defer func() {
-		for range stream {
-			// discard remaining messages
-		}
-	}()
-
-	// Write SSE headers
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-
-	// Flush the headers
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-
-	// Forward raw SSE lines directly to client (already includes "data: " prefix)
-	for line := range stream {
-		// Check if client disconnected
-		if checkClientDisconnect(r) {
-			logger.Info("Client disconnected, closing stream", "provider", providerKey)
-			s.state.RecordFailure(providerKey, threshold)
-			return
-		}
-
-		// Write raw line as-is (already in SSE format with "data: " prefix)
-		_, err := fmt.Fprintf(w, "%s\n\n", line)
-		if err != nil {
-			logger.Error("Failed to write stream chunk", "provider", providerKey, "error", err)
-			s.state.RecordFailure(providerKey, threshold)
-			return
-		}
-
-		// Flush to send immediately
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
-	}
 }
 
 // handleV1Completions handles POST /v1/completions
@@ -302,15 +249,18 @@ func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Stream {
-		// For streaming, find provider and delegate to streaming handler
-		prov, providerKey, providerModel, err := s.findProviderWithFailover(req.Model, "")
+		// For streaming, use streamWithFailoverTyped for automatic retry
+		err := streamWithFailoverTyped(s, w, r, req.Model, "",
+			func(ctx context.Context, prov provider.Provider, providerModel string) (<-chan openai.CompletionResponse, error) {
+				return prov.StreamComplete(ctx, providerModel, &req)
+			},
+			func(w http.ResponseWriter, r *http.Request, stream <-chan openai.CompletionResponse, providerKey string) error {
+				return s.writeCompletionStream(w, r, stream, providerKey, req.Model)
+			},
+		)
 		if err != nil {
 			s.handleAllProvidersFailed(w, err)
-			return
 		}
-		threshold := s.config.GetThresholds(providerKey).FailuresBeforeSwitch
-		*r = *r.WithContext(setProviderContext(r.Context(), providerKey, req.Model))
-		s.streamV1Completions(w, r, prov, providerModel, providerKey, req.Model, &req, threshold)
 		return
 	}
 
@@ -325,50 +275,6 @@ func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.handleProviderSuccess(w, providerKey, resp)
-}
-
-// streamV1Completions streams completions in SSE format
-func (s *Server) streamV1Completions(w http.ResponseWriter, r *http.Request, prov provider.Provider, providerModel, providerKey, requestModel string, req *openai.CompletionRequest, threshold int) {
-	stream, err := prov.StreamComplete(r.Context(), providerModel, req)
-	if err != nil {
-		logger.Error("StreamComplete failed", "provider", providerKey, "error", err)
-		s.state.RecordFailure(providerKey, threshold)
-		handleError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	completionID := "cmpl-" + uuid.New().String()[:8]
-	created := time.Now().Unix()
-
-	s.streamCommon(w, r, providerKey, requestModel, threshold, completionID, func(flusher http.Flusher) bool {
-		for resp := range stream {
-			// Check if client disconnected
-			if checkClientDisconnect(r) {
-				logger.Info("Client disconnected, closing stream", "provider", providerKey)
-				s.state.RecordFailure(providerKey, threshold)
-				return false
-			}
-
-			resp.ID = completionID
-			resp.Created = created
-			resp.Model = requestModel
-
-			data, err := json.Marshal(resp)
-			if err != nil {
-				logger.Error("Failed to marshal stream chunk", "provider", providerKey, "error", err)
-				continue
-			}
-			if err := writeSSEChunk(w, flusher, data); err != nil {
-				logger.Error("Failed to write stream chunk", "provider", providerKey, "error", err)
-				s.state.RecordFailure(providerKey, threshold)
-				return false
-			}
-		}
-		return true
-	})
-
-	// Drain remaining messages to unblock provider goroutine
-	defer drainStream(stream)
 }
 
 // handleV1Embeddings handles POST /v1/embeddings
@@ -434,15 +340,18 @@ func convertInputToSlice(input any) []string {
 
 // handleAllProvidersFailed handles when all providers have failed
 func (s *Server) handleAllProvidersFailed(w http.ResponseWriter, lastErr error) {
+	// Log ERROR when all providers have failed
+	errMsg := "all providers failed"
+	if lastErr != nil {
+		errMsg = lastErr.Error()
+	}
+	logger.Error("All providers failed", "error", errMsg)
+
 	timeout := s.state.GetProgressiveTimeout()
 	s.state.IncrementTimeout(s.config.Thresholds.MaxTimeout)
 
 	w.Header().Set("Retry-After", fmt.Sprintf("%d", timeout/1000))
 	w.WriteHeader(http.StatusServiceUnavailable)
 
-	errMsg := "all providers failed"
-	if lastErr != nil {
-		errMsg = lastErr.Error()
-	}
 	encodeJSON(w, map[string]string{"error": errMsg})
 }
