@@ -27,3 +27,6 @@ supermodel.json
 *.local.json
 .sisyphus/
 session
+
+# Git worktrees
+.worktrees/

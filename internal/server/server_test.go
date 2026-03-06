@@ -384,11 +384,19 @@ func TestHandleError(t *testing.T) {
 	// Create a response recorder
 	rec := httptest.NewRecorder()
 
-	// Call handleError directly using the handler
+	// GET /v1/chat/completions is now valid (list stored completions returns 200)
 	srv.handleV1ChatCompletions(rec, httptest.NewRequest(http.MethodGet, "/v1/chat/completions", nil))
 
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200 for GET, got %d", rec.Code)
+	}
+
+	// Test DELETE method still returns 405
+	rec = httptest.NewRecorder()
+	srv.handleV1ChatCompletions(rec, httptest.NewRequest(http.MethodDelete, "/v1/chat/completions", nil))
+
 	if rec.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected status 405, got %d", rec.Code)
+		t.Errorf("expected status 405 for DELETE, got %d", rec.Code)
 	}
 }
 

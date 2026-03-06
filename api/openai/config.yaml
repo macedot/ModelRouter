@@ -1,0 +1,7 @@
+package: openai
+generate:
+  models: true
+  embedded-spec: false
+output: internal/api/openai/generated/types.gen.go
+output-options:
+  skip-prune: true

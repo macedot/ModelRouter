@@ -37,6 +37,9 @@ type Provider interface {
 
 	// Embed creates embeddings for the given input
 	Embed(ctx context.Context, model string, input []string) (*openai.EmbeddingResponse, error)
+
+	// Moderate checks content for policy violations
+	Moderate(ctx context.Context, input string) (*openai.ModerationResponse, error)
 }
 
 // OpenAIProvider implements Provider for OpenAI-compatible APIs
@@ -388,4 +391,42 @@ func (p *OpenAIProvider) Embed(ctx context.Context, model string, input []string
 	}
 
 	return &embedResp, nil
+}
+
+// Moderate checks content for policy violations
+func (p *OpenAIProvider) Moderate(ctx context.Context, input string) (*openai.ModerationResponse, error) {
+	req := openai.ModerationRequest{
+		Input: input,
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := p.buildRequest(body, "/moderations")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := p.doRequest(ctx, httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		if er := openai.ParseErrorResponse(respBody); er != nil {
+			return nil, er
+		}
+		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var modResp openai.ModerationResponse
+	if err := json.NewDecoder(resp.Body).Decode(&modResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &modResp, nil
 }

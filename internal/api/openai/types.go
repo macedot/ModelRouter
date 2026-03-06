@@ -219,6 +219,56 @@ type EmbeddingData struct {
 	Embedding []float64 `json:"embedding"`
 }
 
+// ModerationRequest is sent to /v1/moderations
+type ModerationRequest struct {
+	Input string  `json:"input"`
+	Model *string `json:"model,omitempty"`
+}
+
+// ModerationResponse is returned from /v1/moderations
+type ModerationResponse struct {
+	ID      string             `json:"id"`
+	Model   string             `json:"model"`
+	Results []ModerationResult `json:"results"`
+}
+
+// ModerationResult represents a single moderation result
+type ModerationResult struct {
+	Flagged        bool                     `json:"flagged"`
+	Categories     ModerationCategories     `json:"categories"`
+	CategoryScores ModerationCategoryScores `json:"category_scores"`
+}
+
+// ModerationCategories represents category flags
+type ModerationCategories struct {
+	Hate                  bool `json:"hate"`
+	HateThreatening       bool `json:"hate/threatening"`
+	Harassment            bool `json:"harassment"`
+	HarassmentThreatening bool `json:"harassment/threatening"`
+	SelfHarm              bool `json:"self-harm"`
+	SelfHarmIntent        bool `json:"self-harm/intent"`
+	SelfHarmInstructions  bool `json:"self-harm/instructions"`
+	Sexual                bool `json:"sexual"`
+	SexualMinors          bool `json:"sexual/minors"`
+	Violence              bool `json:"violence"`
+	ViolenceGraphic       bool `json:"violence/graphic"`
+}
+
+// ModerationCategoryScores represents category scores
+type ModerationCategoryScores struct {
+	Hate                  float64 `json:"hate"`
+	HateThreatening       float64 `json:"hate/threatening"`
+	Harassment            float64 `json:"harassment"`
+	HarassmentThreatening float64 `json:"harassment/threatening"`
+	SelfHarm              float64 `json:"self-harm"`
+	SelfHarmIntent        float64 `json:"self-harm/intent"`
+	SelfHarmInstructions  float64 `json:"self-harm/instructions"`
+	Sexual                float64 `json:"sexual"`
+	SexualMinors          float64 `json:"sexual/minors"`
+	Violence              float64 `json:"violence"`
+	ViolenceGraphic       float64 `json:"violence/graphic"`
+}
+
 // ChatCompletionChunk is used for streaming chat completions
 type ChatCompletionChunk struct {
 	ID                string                      `json:"id"`

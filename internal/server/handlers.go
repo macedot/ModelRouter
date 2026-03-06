@@ -9,15 +9,51 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/macedot/openmodel/internal/api/openai"
+	"github.com/macedot/openmodel/internal/config"
 	"github.com/macedot/openmodel/internal/logger"
 	"github.com/macedot/openmodel/internal/provider"
 )
+
+// formatProviderKey creates a unique key for a provider/model combination
+func formatProviderKey(p config.ModelProvider) string {
+	return fmt.Sprintf("%s/%s", p.Provider, p.Model)
+}
+
+// setupStreamHeaders sets up SSE response headers and returns a flusher
+func setupStreamHeaders(w http.ResponseWriter) http.Flusher {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	flusher, _ := w.(http.Flusher)
+	return flusher
+}
+
+// writeSSEChunk writes a data chunk in SSE format with flush
+func writeSSEChunk(w http.ResponseWriter, flusher http.Flusher, data []byte) {
+	w.Write([]byte("data: "))
+	w.Write(data)
+	w.Write([]byte("\n\n"))
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
+// writeSSEDone writes the SSE [DONE] message with flush
+func writeSSEDone(w http.ResponseWriter, flusher http.Flusher) {
+	w.Write([]byte("data: [DONE]\n\n"))
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
 
 // handleError writes an error response
 func handleError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+		logger.Error("Failed to encode error response", "error", err)
+	}
 }
 
 // handleRoot handles GET /
@@ -27,11 +63,13 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"name":    "openmodel",
 		"version": "0.1.0",
 		"status":  "running",
-	})
+	}); err != nil {
+		logger.Error("Failed to encode root response", "error", err)
+	}
 }
 
 // handleV1Models handles GET /v1/models
@@ -41,25 +79,23 @@ func (s *Server) handleV1Models(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var models []openai.Model
+	// Preallocate slice for efficiency
+	models := make([]openai.Model, 0, len(s.config.Models))
 	for modelName := range s.config.Models {
 		models = append(models, openai.NewModel(modelName, "openmodel"))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(openai.ModelList{
+	if err := json.NewEncoder(w).Encode(openai.ModelList{
 		Object: "list",
 		Data:   models,
-	})
+	}); err != nil {
+		logger.Error("Failed to encode models response", "error", err)
+	}
 }
 
-// handleV1Model handles GET /v1/models/{model}
+// handleV1Model handles GET and DELETE /v1/models/{model}
 func (s *Server) handleV1Model(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	modelName := r.URL.Path[len("/v1/models/"):]
 	if modelName == "" {
 		http.Error(w, "model name required", http.StatusBadRequest)
@@ -72,13 +108,40 @@ func (s *Server) handleV1Model(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(openai.NewModel(modelName, "openmodel"))
+	switch r.Method {
+	case http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(openai.NewModel(modelName, "openmodel")); err != nil {
+			logger.Error("Failed to encode model response", "error", err)
+		}
+	case http.MethodDelete:
+		// DELETE /v1/models/{model} - for fine-tuned model deletion
+		// For proxy, return success (model deletion is proxy-level operation)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":      modelName,
+			"object":  "model",
+			"deleted": true,
+		}); err != nil {
+			logger.Error("Failed to encode delete response", "error", err)
+		}
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
-// handleV1ChatCompletions handles POST /v1/chat/completions
+// handleV1ChatCompletions handles GET and POST /v1/chat/completions
 func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodGet:
+		// GET /v1/chat/completions - list stored completions (returns empty for proxy)
+		s.handleV1ChatCompletionsList(w, r)
+		return
+	case http.MethodPost:
+		// POST /v1/chat/completions - create completion
+		break
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -105,7 +168,7 @@ func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request)
 	var lastErr error
 
 	for _, p := range providers {
-		providerKey := fmt.Sprintf("%s/%s", p.Provider, p.Model)
+		providerKey := formatProviderKey(p)
 
 		if !s.state.IsAvailable(providerKey, threshold) {
 			continue
@@ -131,11 +194,26 @@ func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request)
 
 		s.state.ResetModel(providerKey)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			logger.Error("Failed to encode chat response", "error", err)
+		}
 		return
 	}
 
 	s.handleAllProvidersFailed(w, lastErr)
+}
+
+// handleV1ChatCompletionsList handles GET /v1/chat/completions
+// Returns an empty list for proxy since we don't store completions
+func (s *Server) handleV1ChatCompletionsList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"object": "list",
+		"data":   []interface{}{},
+	}); err != nil {
+		logger.Error("Failed to encode completions list response", "error", err)
+	}
 }
 
 // streamV1ChatCompletions streams chat completions in OpenAI SSE format
@@ -148,11 +226,7 @@ func (s *Server) streamV1ChatCompletions(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	flusher, _ := w.(http.Flusher)
+	flusher := setupStreamHeaders(w)
 
 	completionID := "chatcmpl-" + uuid.New().String()[:8]
 	created := time.Now().Unix()
@@ -190,18 +264,10 @@ func (s *Server) streamV1ChatCompletions(w http.ResponseWriter, r *http.Request,
 			logger.Error("Failed to marshal stream chunk", "provider", providerKey, "error", err)
 			continue
 		}
-		w.Write([]byte("data: "))
-		w.Write(data)
-		w.Write([]byte("\n\n"))
-		if flusher != nil {
-			flusher.Flush()
-		}
+		writeSSEChunk(w, flusher, data)
 	}
 
-	w.Write([]byte("data: [DONE]\n\n"))
-	if flusher != nil {
-		flusher.Flush()
-	}
+	writeSSEDone(w, flusher)
 
 	s.state.ResetModel(providerKey)
 }
@@ -235,7 +301,7 @@ func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
 	var lastErr error
 
 	for _, p := range providers {
-		providerKey := fmt.Sprintf("%s/%s", p.Provider, p.Model)
+		providerKey := formatProviderKey(p)
 
 		if !s.state.IsAvailable(providerKey, threshold) {
 			continue
@@ -261,7 +327,9 @@ func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
 
 		s.state.ResetModel(providerKey)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			logger.Error("Failed to encode completion response", "error", err)
+		}
 		return
 	}
 
@@ -278,11 +346,7 @@ func (s *Server) streamV1Completions(w http.ResponseWriter, r *http.Request, pro
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	flusher, _ := w.(http.Flusher)
+	flusher := setupStreamHeaders(w)
 
 	completionID := "cmpl-" + uuid.New().String()[:8]
 	created := time.Now().Unix()
@@ -305,18 +369,10 @@ func (s *Server) streamV1Completions(w http.ResponseWriter, r *http.Request, pro
 			logger.Error("Failed to marshal stream chunk", "provider", providerKey, "error", err)
 			continue
 		}
-		w.Write([]byte("data: "))
-		w.Write(data)
-		w.Write([]byte("\n\n"))
-		if flusher != nil {
-			flusher.Flush()
-		}
+		writeSSEChunk(w, flusher, data)
 	}
 
-	w.Write([]byte("data: [DONE]\n\n"))
-	if flusher != nil {
-		flusher.Flush()
-	}
+	writeSSEDone(w, flusher)
 
 	s.state.ResetModel(providerKey)
 }
@@ -353,7 +409,7 @@ func (s *Server) handleV1Embeddings(w http.ResponseWriter, r *http.Request) {
 	input := convertInputToSlice(req.Input)
 
 	for _, p := range providers {
-		providerKey := fmt.Sprintf("%s/%s", p.Provider, p.Model)
+		providerKey := formatProviderKey(p)
 
 		if !s.state.IsAvailable(providerKey, threshold) {
 			continue
@@ -374,7 +430,9 @@ func (s *Server) handleV1Embeddings(w http.ResponseWriter, r *http.Request) {
 
 		s.state.ResetModel(providerKey)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			logger.Error("Failed to encode embedding response", "error", err)
+		}
 		return
 	}
 
@@ -389,11 +447,17 @@ func validateChatRequest(req *openai.ChatCompletionRequest) error {
 	if len(req.Messages) == 0 {
 		return fmt.Errorf("messages array cannot be empty")
 	}
+	validRoles := map[string]bool{
+		"system":    true,
+		"user":      true,
+		"assistant": true,
+		"tool":      true,
+	}
 	for i, msg := range req.Messages {
 		if msg.Role == "" {
 			return fmt.Errorf("message role is required at index %d", i)
 		}
-		if msg.Role != "system" && msg.Role != "user" && msg.Role != "assistant" && msg.Role != "tool" {
+		if !validRoles[msg.Role] {
 			return fmt.Errorf("invalid message role %q at index %d", msg.Role, i)
 		}
 	}
@@ -475,5 +539,7 @@ func (s *Server) handleAllProvidersFailed(w http.ResponseWriter, lastErr error) 
 	if lastErr != nil {
 		errMsg = lastErr.Error()
 	}
-	json.NewEncoder(w).Encode(map[string]string{"error": errMsg})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": errMsg}); err != nil {
+		logger.Error("Failed to encode error response", "error", err)
+	}
 }

@@ -1,0 +1,592 @@
+openapi: 3.0.3
+info:
+  title: OpenAI API (openmodel subset)
+  description: Core inference APIs for openmodel proxy
+  version: 2.0.0
+servers:
+  - url: https://api.openai.com/v1
+paths:
+  /chat/completions:
+    post:
+      operationId: createChatCompletion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChatCompletionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateChatCompletionResponse'
+  /completions:
+    post:
+      operationId: createCompletion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCompletionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCompletionResponse'
+  /embeddings:
+    post:
+      operationId: createEmbedding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEmbeddingRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateEmbeddingResponse'
+  /moderations:
+    post:
+      operationId: createModeration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateModerationRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateModerationResponse'
+  /models:
+    get:
+      operationId: listModels
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListModelsResponse'
+  /models/{model}:
+    get:
+      operationId: retrieveModel
+      parameters:
+        - name: model
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Model'
+
+components:
+  schemas:
+    Model:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - owned_by
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        created:
+          type: integer
+        owned_by:
+          type: string
+
+    ListModelsResponse:
+      type: object
+      required:
+        - object
+        - data
+      properties:
+        object:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Model'
+
+    ChatCompletionRequestMessage:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          type: string
+        content:
+          type: string
+        name:
+          type: string
+        tool_call_id:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionMessageToolCall'
+
+    ChatCompletionMessageToolCall:
+      type: object
+      required:
+        - id
+        - type
+        - function
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        function:
+          $ref: '#/components/schemas/ChatCompletionFunctionCall'
+
+    ChatCompletionFunctionCall:
+      type: object
+      required:
+        - name
+        - arguments
+      properties:
+        name:
+          type: string
+        arguments:
+          type: string
+
+    Tool:
+      type: object
+      required:
+        - type
+        - function
+      properties:
+        type:
+          type: string
+        function:
+          $ref: '#/components/schemas/ToolFunction'
+
+    ToolFunction:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parameters:
+          type: object
+
+    ResponseFormat:
+      type: object
+      properties:
+        type:
+          type: string
+        json_schema:
+          type: object
+
+    CreateChatCompletionRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionRequestMessage'
+        temperature:
+          type: number
+        top_p:
+          type: number
+        n:
+          type: integer
+        stream:
+          type: boolean
+        stop:
+          type: array
+          items:
+            type: string
+        max_tokens:
+          type: integer
+        presence_penalty:
+          type: number
+        frequency_penalty:
+          type: number
+        logit_bias:
+          type: object
+        user:
+          type: string
+        response_format:
+          $ref: '#/components/schemas/ResponseFormat'
+        seed:
+          type: integer
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tool'
+        tool_choice:
+          type: object
+
+    ChatCompletionChoice:
+      type: object
+      required:
+        - index
+        - message
+        - finish_reason
+      properties:
+        index:
+          type: integer
+        message:
+          $ref: '#/components/schemas/ChatCompletionResponseMessage'
+        finish_reason:
+          type: string
+        logprobs:
+          type: object
+
+    ChatCompletionResponseMessage:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          type: string
+        content:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionMessageToolCall'
+        refusal:
+          type: string
+
+    CreateChatCompletionResponse:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - model
+        - choices
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionChoice'
+        usage:
+          $ref: '#/components/schemas/Usage'
+        system_fingerprint:
+          type: string
+        service_tier:
+          type: string
+
+    Usage:
+      type: object
+      properties:
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+
+    Logprobs:
+      type: object
+      properties:
+        tokens:
+          type: array
+          items:
+            type: string
+        token_logprobs:
+          type: array
+          items:
+            type: number
+        top_logprobs:
+          type: array
+          items:
+            type: object
+        text_offset:
+          type: array
+          items:
+            type: integer
+
+    CompletionChoice:
+      type: object
+      required:
+        - text
+        - index
+        - finish_reason
+      properties:
+        text:
+          type: string
+        index:
+          type: integer
+        logprobs:
+          $ref: '#/components/schemas/Logprobs'
+        finish_reason:
+          type: string
+
+    CreateCompletionRequest:
+      type: object
+      required:
+        - model
+        - prompt
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+        suffix:
+          type: string
+        max_tokens:
+          type: integer
+        temperature:
+          type: number
+        top_p:
+          type: number
+        n:
+          type: integer
+        stream:
+          type: boolean
+        logprobs:
+          type: integer
+        echo:
+          type: boolean
+        stop:
+          type: array
+          items:
+            type: string
+        presence_penalty:
+          type: number
+        frequency_penalty:
+          type: number
+        best_of:
+          type: integer
+        logit_bias:
+          type: object
+        user:
+          type: string
+
+    CreateCompletionResponse:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - model
+        - choices
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompletionChoice'
+        usage:
+          $ref: '#/components/schemas/Usage'
+        system_fingerprint:
+          type: string
+
+    EmbeddingData:
+      type: object
+      required:
+        - object
+        - embedding
+        - index
+      properties:
+        object:
+          type: string
+        embedding:
+          type: array
+          items:
+            type: number
+        index:
+          type: integer
+
+    CreateEmbeddingRequest:
+      type: object
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+        input:
+          type: string
+        encoding_format:
+          type: string
+        dimensions:
+          type: integer
+        user:
+          type: string
+
+    CreateEmbeddingResponse:
+      type: object
+      required:
+        - object
+        - data
+        - model
+      properties:
+        object:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmbeddingData'
+        model:
+          type: string
+        usage:
+          $ref: '#/components/schemas/Usage'
+
+    CategoryScores:
+      type: object
+      properties:
+        hate:
+          type: number
+        hate_threatening:
+          type: number
+        harassment:
+          type: number
+        harassment_threatening:
+          type: number
+        self_harm:
+          type: number
+        self_harm_intent:
+          type: number
+        self_harm_instructions:
+          type: number
+        sexual:
+          type: number
+        sexual_minors:
+          type: number
+        violence:
+          type: number
+        violence_graphic:
+          type: number
+
+    ModerationCategories:
+      type: object
+      properties:
+        hate:
+          type: boolean
+        hate_threatening:
+          type: boolean
+        harassment:
+          type: boolean
+        harassment_threatening:
+          type: boolean
+        self_harm:
+          type: boolean
+        self_harm_intent:
+          type: boolean
+        self_harm_instructions:
+          type: boolean
+        sexual:
+          type: boolean
+        sexual_minors:
+          type: boolean
+        violence:
+          type: boolean
+        violence_graphic:
+          type: boolean
+        illicit:
+          type: boolean
+        illicit_violent:
+          type: boolean
+
+    ModerationResult:
+      type: object
+      required:
+        - flagged
+        - categories
+        - category_scores
+      properties:
+        flagged:
+          type: boolean
+        categories:
+          $ref: '#/components/schemas/ModerationCategories'
+        category_scores:
+          $ref: '#/components/schemas/CategoryScores'
+
+    CreateModerationRequest:
+      type: object
+      required:
+        - input
+      properties:
+        input:
+          type: string
+        model:
+          type: string
+
+    CreateModerationResponse:
+      type: object
+      required:
+        - id
+        - model
+        - results
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModerationResult'
+
+    ErrorDetail:
+      type: object
+      required:
+        - message
+        - type
+      properties:
+        message:
+          type: string
+        type:
+          type: string
+        param:
+          type: string
+        code:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'

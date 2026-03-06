@@ -1,4 +1,4 @@
-.PHONY: build test run clean install tag release help cover check
+.PHONY: build test run clean install tag release help cover check generate
 
 # Variables
 BINARY_NAME=openmodel
@@ -108,3 +108,24 @@ lint:
 	@echo "Linting..."
 	@which golangci-lint > /dev/null || (echo "Install golangci-lint first" && exit 1)
 	golangci-lint run ./...
+
+# Generate OpenAPI types from core spec
+generate: api/openai/openapi.yaml
+	@echo "Generating OpenAPI types..."
+	@which oapi-codegen > /dev/null || (echo "Install oapi-codegen first: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest" && exit 1)
+	oapi-codegen -config api/openai/config.yaml api/openai/openapi.yaml > internal/api/openai/generated/types.gen.go
+
+# Download full OpenAPI spec and extract core types
+download-spec:
+	@echo "Downloading OpenAI OpenAPI spec..."
+	@which curl > /dev/null || (echo "Install curl first" && exit 1)
+	curl -sL "https://app.stainless.com/api/spec/documented/openai/openapi.documented.yml" -o api/openai/openapi-full.yaml
+	@echo "Extracting core types..."
+	python3 api/openai/extract-core.py api/openai/openapi-full.yaml api/openai/openapi.yaml
+	@echo "Running make generate..."
+	$(MAKE) generate
+
+# Run spec compliance tests
+test-spec:
+	@echo "Running spec compliance tests..."
+	$(GO) test -v -run "SpecCompliance|BackwardCompatibility" ./internal/api/openai/...

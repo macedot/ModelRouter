@@ -24,11 +24,13 @@ type mockProvider struct {
 	completeResult       *openai.CompletionResponse
 	completeStreamResult []openai.CompletionResponse
 	embedResult          *openai.EmbeddingResponse
+	moderateResult       *openai.ModerationResponse
 	chatErr              error
 	streamChatErr        error
 	completeErr          error
 	streamCompleteErr    error
 	embedErr             error
+	moderateErr          error
 }
 
 func (m *mockProvider) Name() string { return m.nameVal }
@@ -78,6 +80,13 @@ func (m *mockProvider) Embed(ctx context.Context, model string, input []string) 
 		return nil, m.embedErr
 	}
 	return m.embedResult, nil
+}
+
+func (m *mockProvider) Moderate(ctx context.Context, input string) (*openai.ModerationResponse, error) {
+	if m.moderateErr != nil {
+		return nil, m.moderateErr
+	}
+	return m.moderateResult, nil
 }
 
 func newTestServer(t *testing.T, mockProv *mockProvider) *Server {
@@ -580,13 +589,14 @@ func TestErrorAllProvidersFailed(t *testing.T) {
 func TestMethodNotAllowed(t *testing.T) {
 	srv := newTestServer(t, nil)
 
+	// GET /v1/chat/completions is now valid (list stored completions)
 	req := httptest.NewRequest(http.MethodGet, "/v1/chat/completions", nil)
 	rec := httptest.NewRecorder()
 
 	srv.handleV1ChatCompletions(rec, req)
 
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected status 405, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200 for GET /v1/chat/completions, got %d", rec.Code)
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/v1/models", nil)
@@ -797,5 +807,157 @@ func TestValidationEmbeddingsNilInput(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected status 400, got %d", rec.Code)
+	}
+}
+
+func TestProviderFailover(t *testing.T) {
+	// First provider fails, second provider succeeds
+	firstProvider := &mockProvider{
+		nameVal:  "first",
+		chatErr:  fmt.Errorf("first provider failed"),
+	}
+	secondProvider := &mockProvider{
+		nameVal: "second",
+		chatResult: &openai.ChatCompletionResponse{
+			ID:      "chatcmpl-failover",
+			Object:  "chat.completion",
+			Created: time.Now().Unix(),
+			Model:   "fallback-model",
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Index: 0,
+					Message: &openai.ChatCompletionMessage{
+						Role:    "assistant",
+						Content: "Fallback response",
+					},
+					FinishReason: "stop",
+				},
+			},
+		},
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Models = map[string][]config.ModelProvider{
+		"failover-model": {
+			{Provider: "first", Model: "first-model"},
+			{Provider: "second", Model: "fallback-model"},
+		},
+	}
+	stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+	providers := map[string]provider.Provider{
+		"first":  firstProvider,
+		"second": secondProvider,
+	}
+	srv := New(cfg, providers, stateMgr)
+
+	body := `{"model":"failover-model","messages":[{"role":"user","content":"test"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.handleV1ChatCompletions(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d, body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp openai.ChatCompletionResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+
+	if resp.Choices[0].Message.Content != "Fallback response" {
+		t.Errorf("expected fallback response, got %q", resp.Choices[0].Message.Content)
+	}
+}
+
+func TestStateResetAfterSuccess(t *testing.T) {
+	// This test verifies that successful responses reset provider failure state
+	mock := &mockProvider{
+		nameVal: "mock",
+		chatResult: &openai.ChatCompletionResponse{
+			ID:      "chatcmpl-reset",
+			Object:  "chat.completion",
+			Created: time.Now().Unix(),
+			Model:   "test-model",
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Index: 0,
+					Message: &openai.ChatCompletionMessage{
+						Role:    "assistant",
+						Content: "Success!",
+					},
+					FinishReason: "stop",
+				},
+			},
+		},
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Models = map[string][]config.ModelProvider{
+		"test-model": {{Provider: "mock", Model: "test-model"}},
+	}
+	stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+	providers := map[string]provider.Provider{"mock": mock}
+	srv := New(cfg, providers, stateMgr)
+
+	providerKey := "mock/test-model"
+
+	// Verify provider is initially available
+	if !stateMgr.IsAvailable(providerKey, 2) {
+		t.Error("expected provider to be available initially")
+	}
+
+	// Make a successful request
+	body := `{"model":"test-model","messages":[{"role":"user","content":"test"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.handleV1ChatCompletions(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	// After successful response, provider should still be available
+	if !stateMgr.IsAvailable(providerKey, 2) {
+		t.Error("expected provider to remain available after successful request")
+	}
+}
+
+func TestProviderNotAvailable(t *testing.T) {
+	mock := &mockProvider{
+		nameVal: "mock",
+	}
+	cfg := config.DefaultConfig()
+	cfg.Models = map[string][]config.ModelProvider{
+		"test-model": {{Provider: "mock", Model: "test-model"}},
+	}
+	cfg.Thresholds.FailuresBeforeSwitch = 3
+	stateMgr := state.New(cfg.Thresholds.InitialTimeout)
+	providers := map[string]provider.Provider{"mock": mock}
+	srv := New(cfg, providers, stateMgr)
+
+	// Record failures to mark provider as unavailable
+	providerKey := "mock/test-model"
+	for i := 0; i < 3; i++ {
+		stateMgr.RecordFailure(providerKey, cfg.Thresholds.FailuresBeforeSwitch)
+	}
+
+	if stateMgr.IsAvailable(providerKey, cfg.Thresholds.FailuresBeforeSwitch) {
+		t.Error("expected provider to be unavailable after 3 failures")
+	}
+
+	// Attempt request - should get 503 because all providers failed
+	body := `{"model":"test-model","messages":[{"role":"user","content":"test"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.handleV1ChatCompletions(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected status 503, got %d", rec.Code)
 	}
 }
