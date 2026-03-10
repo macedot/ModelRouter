@@ -212,6 +212,11 @@ func runServer(configPath *string) {
 		log.Fatalf("Configuration error:\n%v", err)
 	}
 
+	// Validate only one model is marked as default
+	if err := cfg.ValidateDefaultModels(); err != nil {
+		log.Fatalf("Configuration error: %v", err)
+	}
+
 	providers := initProviders(cfg)
 
 	stateMgr := state.New(10000) // 10 second initial timeout
@@ -303,17 +308,24 @@ func runModels(jsonOutput *bool) {
 
 	// Build ordered list with default marker
 	models := make([]modelInfo, 0, len(modelOrder))
-	for i, name := range modelOrder {
+	hasExplicitDefault := false
+	for _, name := range modelOrder {
 		providers := modelMap[name]
+		modelConfig := cfg.Models[name]
 		info := modelInfo{
 			Name:      name,
 			Providers: providers,
+			Default:   modelConfig.Default, // Use configured default
 		}
-		// First defined model is the default, or if only one model exists
-		if i == 0 || len(modelOrder) == 1 {
-			info.Default = true
+		if modelConfig.Default {
+			hasExplicitDefault = true
 		}
 		models = append(models, info)
+	}
+
+	// If no explicit default is set, use the first model
+	if !hasExplicitDefault && len(models) > 0 {
+		models[0].Default = true
 	}
 
 	if *jsonOutput {

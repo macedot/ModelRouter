@@ -694,3 +694,19 @@ func (c *Config) ValidateProviderReferences() error {
 	}
 	return nil
 }
+
+// ValidateDefaultModels checks that at most one model has default: true.
+// Returns an error if multiple models are marked as default.
+func (c *Config) ValidateDefaultModels() error {
+	var defaultModels []string
+	for modelName, modelConfig := range c.Models {
+		if modelConfig.Default {
+			defaultModels = append(defaultModels, modelName)
+		}
+	}
+
+	if len(defaultModels) > 1 {
+		return fmt.Errorf("multiple models marked as default: %s (only one model can be default)", strings.Join(defaultModels, ", "))
+	}
+	return nil
+}

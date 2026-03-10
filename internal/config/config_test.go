@@ -988,3 +988,62 @@ func TestValidateProviderReferences(t *testing.T) {
 		assert.Contains(t, err.Error(), "openai")
 	})
 }
+
+func TestValidateDefaultModels(t *testing.T) {
+	t.Run("no models with default", func(t *testing.T) {
+		cfg := &Config{
+			Models: map[string]ModelConfig{
+				"model-a": {Strategy: "fallback"},
+				"model-b": {Strategy: "fallback"},
+			},
+		}
+		err := cfg.ValidateDefaultModels()
+		assert.NoError(t, err)
+	})
+
+	t.Run("single model with default", func(t *testing.T) {
+		cfg := &Config{
+			Models: map[string]ModelConfig{
+				"model-a": {Strategy: "fallback", Default: true},
+				"model-b": {Strategy: "fallback"},
+			},
+		}
+		err := cfg.ValidateDefaultModels()
+		assert.NoError(t, err)
+	})
+
+	t.Run("multiple models with default", func(t *testing.T) {
+		cfg := &Config{
+			Models: map[string]ModelConfig{
+				"model-a": {Strategy: "fallback", Default: true},
+				"model-b": {Strategy: "fallback", Default: true},
+			},
+		}
+		err := cfg.ValidateDefaultModels()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "multiple models marked as default")
+		assert.Contains(t, err.Error(), "model-a")
+		assert.Contains(t, err.Error(), "model-b")
+	})
+
+	t.Run("three models with default", func(t *testing.T) {
+		cfg := &Config{
+			Models: map[string]ModelConfig{
+				"model-a": {Strategy: "fallback", Default: true},
+				"model-b": {Strategy: "fallback", Default: true},
+				"model-c": {Strategy: "fallback", Default: true},
+			},
+		}
+		err := cfg.ValidateDefaultModels()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "multiple models marked as default")
+	})
+
+	t.Run("empty models", func(t *testing.T) {
+		cfg := &Config{
+			Models: map[string]ModelConfig{},
+		}
+		err := cfg.ValidateDefaultModels()
+		assert.NoError(t, err)
+	})
+}

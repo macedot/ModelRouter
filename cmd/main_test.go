@@ -719,3 +719,91 @@ func TestRunModelsWithUnexpectedArgument(t *testing.T) {
 		t.Error("expected error with missing flag value, got nil")
 	}
 }
+
+func TestDefaultModelAttribute(t *testing.T) {
+	tests := []struct {
+		name            string
+		models          map[string]config.ModelConfig
+		expectedDefault string
+	}{
+		{
+			name: "first model is default when none specified",
+			models: map[string]config.ModelConfig{
+				"model-a": {Strategy: "fallback", Providers: []config.ModelProvider{{Provider: "test", Model: "a"}}},
+				"model-b": {Strategy: "fallback", Providers: []config.ModelProvider{{Provider: "test", Model: "b"}}},
+			},
+			expectedDefault: "model-a",
+		},
+		{
+			name: "explicit default model is marked",
+			models: map[string]config.ModelConfig{
+				"model-a": {Strategy: "fallback", Providers: []config.ModelProvider{{Provider: "test", Model: "a"}}},
+				"model-b": {Strategy: "fallback", Default: true, Providers: []config.ModelProvider{{Provider: "test", Model: "b"}}},
+			},
+			expectedDefault: "model-b",
+		},
+		{
+			name: "single model is default",
+			models: map[string]config.ModelConfig{
+				"only-model": {Strategy: "fallback", Providers: []config.ModelProvider{{Provider: "test", Model: "only"}}},
+			},
+			expectedDefault: "only-model",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build the ordered list of models and check default logic
+			type modelInfo struct {
+				Name    string
+				Default bool
+			}
+
+			modelOrder := make([]string, 0, len(tt.models))
+			for name := range tt.models {
+				modelOrder = append(modelOrder, name)
+			}
+
+			// Sort for consistent ordering
+			for i := 0; i < len(modelOrder); i++ {
+				for j := i + 1; j < len(modelOrder); j++ {
+					if modelOrder[i] > modelOrder[j] {
+						modelOrder[i], modelOrder[j] = modelOrder[j], modelOrder[i]
+					}
+				}
+			}
+
+			models := make([]modelInfo, 0, len(modelOrder))
+			hasExplicitDefault := false
+			for _, name := range modelOrder {
+				modelConfig := tt.models[name]
+				info := modelInfo{
+					Name:    name,
+					Default: modelConfig.Default,
+				}
+				if modelConfig.Default {
+					hasExplicitDefault = true
+				}
+				models = append(models, info)
+			}
+
+			// If no explicit default, first model becomes default
+			if !hasExplicitDefault && len(models) > 0 {
+				models[0].Default = true
+			}
+
+			// Find the default model
+			var foundDefault string
+			for _, m := range models {
+				if m.Default {
+					foundDefault = m.Name
+					break
+				}
+			}
+
+			if foundDefault != tt.expectedDefault {
+				t.Errorf("expected default model %q, got %q", tt.expectedDefault, foundDefault)
+			}
+		})
+	}
+}
