@@ -15,6 +15,63 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
+// jsonErrorWithContext wraps JSON parsing errors with line number and context
+func jsonErrorWithContext(data []byte, err error, context string) error {
+	if err == nil {
+		return nil
+	}
+
+	// Extract line number from offset if it's a syntax error
+	if syntaxErr, ok := err.(*json.SyntaxError); ok {
+		line, col := offsetToLineCol(data, syntaxErr.Offset)
+		return fmt.Errorf("%s: syntax error at line %d, column %d: %w", context, line, col, err)
+	}
+
+	// Check for unmarshal type errors
+	if typeErr, ok := err.(*json.UnmarshalTypeError); ok {
+		line, col := offsetToLineCol(data, typeErr.Offset)
+		return fmt.Errorf("%s: cannot unmarshal %s into %s at line %d, column %d",
+			context, typeErr.Value, typeErr.Type.Name(), line, col)
+	}
+
+	return fmt.Errorf("%s: %w", context, err)
+}
+
+// offsetToLineCol converts a byte offset to line and column numbers
+func offsetToLineCol(data []byte, offset int64) (line, col int) {
+	line = 1
+	col = 1
+
+	if offset <= 0 {
+		return 1, 1
+	}
+
+	// Cap offset to data length
+	if offset > int64(len(data)) {
+		offset = int64(len(data))
+	}
+
+	for i := int64(0); i < offset && i < int64(len(data)); i++ {
+		if data[i] == '\n' {
+			line++
+			col = 1
+		} else {
+			col++
+		}
+	}
+
+	return line, col
+}
+
+// jsonUnmarshalWithLines parses JSON with better error messages
+func jsonUnmarshalWithLines(data []byte, v interface{}, context string) error {
+	err := json.Unmarshal(data, v)
+	if err != nil {
+		return jsonErrorWithContext(data, err, context)
+	}
+	return nil
+}
+
 // Config represents the openmodel configuration
 type Config struct {
 	Server     ServerConfig              `json:"server"`
@@ -485,11 +542,11 @@ func Load() (*Config, error) {
 func mergeAndParseConfig(lowerPriorityData, higherPriorityData []byte) (*Config, error) {
 	// Unmarshal both configs as map[string]any
 	var lowerMap, higherMap map[string]any
-	if err := json.Unmarshal(lowerPriorityData, &lowerMap); err != nil {
-		return nil, fmt.Errorf("failed to parse user config: %w", err)
+	if err := jsonUnmarshalWithLines(lowerPriorityData, &lowerMap, "parsing user config"); err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(higherPriorityData, &higherMap); err != nil {
-		return nil, fmt.Errorf("failed to parse current dir config: %w", err)
+	if err := jsonUnmarshalWithLines(higherPriorityData, &higherMap, "parsing current directory config"); err != nil {
+		return nil, err
 	}
 
 	// Merge: higherPriority overwrites lowerPriority
@@ -549,8 +606,8 @@ func LoadFromPath(path string) (*Config, error) {
 func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 	// Extract $schema field
 	var schemaConfig configWithSchema
-	if err := json.Unmarshal(data, &schemaConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+	if err := jsonUnmarshalWithLines(data, &schemaConfig, "parsing $schema field"); err != nil {
+		return nil, err
 	}
 
 	// Validate schema is present if validation is enabled
@@ -573,8 +630,8 @@ func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 
 			// Validate config against schema
 			var configData any
-			if err := json.Unmarshal(data, &configData); err != nil {
-				return nil, fmt.Errorf("failed to parse config data: %w", err)
+			if err := jsonUnmarshalWithLines(data, &configData, "parsing for schema validation"); err != nil {
+				return nil, err
 			}
 			if err := compiledSchema.Validate(configData); err != nil {
 				return nil, fmt.Errorf("config validation failed: %w", err)
@@ -591,8 +648,8 @@ func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 		LogFormat  string                    `json:"log_format"`
 		Thresholds ThresholdsConfig          `json:"thresholds"`
 	}
-	if err := json.Unmarshal(data, &tempConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	if err := jsonUnmarshalWithLines(data, &tempConfig, "parsing config structure"); err != nil {
+		return nil, err
 	}
 
 	cfg := DefaultConfig()
