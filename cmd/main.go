@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -292,13 +291,18 @@ func runModels(jsonOutput *bool) {
 		Default   bool           `json:"default,omitempty"`
 	}
 
-	// Group providers by model name, preserving order
-	modelMap := make(map[string][]providerInfo)
-	modelOrder := make([]string, 0)
-	for name, modelConfig := range cfg.Models {
-		if _, exists := modelMap[name]; !exists {
+	// Group providers by model name, using preserved order from config
+	modelOrder := cfg.ModelOrder
+	if len(modelOrder) == 0 {
+		// Fallback: extract model names from map (order will be non-deterministic)
+		modelOrder = make([]string, 0, len(cfg.Models))
+		for name := range cfg.Models {
 			modelOrder = append(modelOrder, name)
 		}
+	}
+
+	modelMap := make(map[string][]providerInfo)
+	for name, modelConfig := range cfg.Models {
 		for _, p := range modelConfig.Providers {
 			modelMap[name] = append(modelMap[name], providerInfo{
 				Provider: p.Provider,
@@ -306,9 +310,6 @@ func runModels(jsonOutput *bool) {
 			})
 		}
 	}
-
-	// Sort model names for deterministic ordering
-	sort.Strings(modelOrder)
 
 	// Build ordered list with default marker
 	models := make([]modelInfo, 0, len(modelOrder))
@@ -327,7 +328,7 @@ func runModels(jsonOutput *bool) {
 		models = append(models, info)
 	}
 
-	// If no explicit default is set, use the first model (alphabetically)
+	// If no explicit default is set, use the first model (in config order)
 	if !hasExplicitDefault && len(models) > 0 {
 		models[0].Default = true
 	}

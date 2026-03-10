@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,6 +20,7 @@ type Config struct {
 	Server     ServerConfig              `json:"server"`
 	Providers  map[string]ProviderConfig `json:"providers"`
 	Models     map[string]ModelConfig    `json:"models"`
+	ModelOrder []string                  `json:"-"` // Preserves order of models from config file
 	LogLevel   string                    `json:"log_level"`
 	LogFormat  string                    `json:"log_format"`
 	Thresholds ThresholdsConfig          `json:"thresholds"`
@@ -614,6 +616,31 @@ func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 	// Only override thresholds if explicitly set (non-zero)
 	if tempConfig.Thresholds.FailuresBeforeSwitch != 0 {
 		cfg.Thresholds = tempConfig.Thresholds
+	}
+
+	// Extract model names in order from raw JSON to preserve config file order
+	var rawConfig struct {
+		Models json.RawMessage `json:"models"`
+	}
+	if err := json.Unmarshal(data, &rawConfig); err == nil && len(rawConfig.Models) > 0 {
+		dec := json.NewDecoder(bytes.NewReader(rawConfig.Models))
+		tok, err := dec.Token()
+		if err == nil && tok == json.Delim('{') {
+			for dec.More() {
+				key, err := dec.Token()
+				if err != nil {
+					break
+				}
+				if keyStr, ok := key.(string); ok {
+					cfg.ModelOrder = append(cfg.ModelOrder, keyStr)
+				}
+				// Skip the value
+				var rawValue json.RawMessage
+				if err := dec.Decode(&rawValue); err != nil {
+					break
+				}
+			}
+		}
 	}
 
 	// Convert Models - parse each entry as either:
