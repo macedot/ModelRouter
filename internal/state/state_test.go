@@ -575,9 +575,9 @@ func BenchmarkNew(b *testing.B) {
 
 func TestNextRoundRobin(t *testing.T) {
 	tests := []struct {
-		name          string
-		total         int
-		callSequence  []int // Expected return values for consecutive calls
+		name         string
+		total        int
+		callSequence []int // Expected return values for consecutive calls
 	}{
 		{
 			name:         "single provider always returns 0",
