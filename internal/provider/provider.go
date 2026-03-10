@@ -10,12 +10,52 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/macedot/openmodel/internal/api/openai"
+	"github.com/macedot/openmodel/internal/logger"
 )
+
+// createTraceFileForRequest creates a new trace file for a specific request
+// Returns the file handle (caller must close it)
+func createTraceFileForRequest(providerName, requestID string) *os.File {
+	traceDir := os.Getenv("OPENMODEL_TRACE_DIR")
+	if traceDir == "" {
+		return nil
+	}
+
+	// Create directory if it doesn't exist
+	os.MkdirAll(traceDir, 0755)
+
+	// Create file with unique name
+	filename := fmt.Sprintf("%s/%s-%s-%d.jsonl", traceDir, providerName, requestID, time.Now().UnixNano())
+	f, err := os.Create(filename)
+	if err != nil {
+		return nil
+	}
+	return f
+}
+
+// prettyPrintJSON formats JSON with indentation.
+// Returns the formatted string, or a truncated raw string if JSON parsing fails.
+func prettyPrintJSON(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, data, "", "  "); err == nil {
+		return buf.String()
+	}
+	// Fallback to raw string
+	str := string(data)
+	if len(str) > 1000 {
+		return str[:1000] + "..."
+	}
+	return str
+}
 
 // maxResponseBodySize defines the maximum size of response body to read for error handling
 const maxResponseBodySize = 1024 * 1024 // 1MB
@@ -618,6 +658,28 @@ func (p *OpenAIProvider) Moderate(ctx context.Context, input string) (*openai.Mo
 
 // DoRequest forwards a raw request body to the provider endpoint
 func (p *OpenAIProvider) DoRequest(ctx context.Context, endpoint string, body []byte, headers map[string]string) ([]byte, error) {
+	// Get request ID for trace file
+	requestID := "unknown"
+	if id, ok := ctx.Value(ctxKeyRequestID{}).(string); ok && id != "" {
+		requestID = id
+	}
+
+	// Create per-request trace file
+	traceFile := createTraceFileForRequest(p.name, requestID)
+	if traceFile != nil {
+		defer traceFile.Close()
+		fmt.Fprintf(traceFile, "{\"type\":\"request\",\"provider\":\"%s\",\"endpoint\":\"%s\",\"url\":\"%s\",\"headers\":%q,\"body\":%s}\n",
+			p.name, endpoint, p.baseURL+endpoint, headers, body)
+	}
+
+	// TRACE: Log the request being sent to provider
+	logger.Trace("Provider request",
+		"provider", p.name,
+		"endpoint", endpoint,
+		"url", p.baseURL+endpoint,
+		"headers", headers,
+		"body", prettyPrintJSON(body))
+
 	req, err := p.buildRequest(ctx, body, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -634,13 +696,30 @@ func (p *OpenAIProvider) DoRequest(ctx context.Context, endpoint string, body []
 	}
 	defer resp.Body.Close()
 
-	if err := p.handleHTTPResponse(resp, true); err != nil {
-		return nil, err
-	}
-
+	// Read response body for logging
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Write response to trace file
+	if traceFile != nil {
+		fmt.Fprintf(traceFile, "{\"type\":\"response\",\"provider\":\"%s\",\"endpoint\":\"%s\",\"status\":%d,\"body\":%s}\n",
+			p.name, endpoint, resp.StatusCode, respBody)
+	}
+
+	// TRACE: Log the response from provider
+	logger.Trace("Provider response",
+		"provider", p.name,
+		"endpoint", endpoint,
+		"status", resp.StatusCode,
+		"body", prettyPrintJSON(respBody))
+
+	if resp.StatusCode != http.StatusOK {
+		if er := openai.ParseErrorResponse(respBody); er != nil {
+			return nil, er
+		}
+		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	return respBody, nil
@@ -648,8 +727,32 @@ func (p *OpenAIProvider) DoRequest(ctx context.Context, endpoint string, body []
 
 // DoStreamRequest forwards a raw streaming request and returns SSE channel
 func (p *OpenAIProvider) DoStreamRequest(ctx context.Context, endpoint string, body []byte, headers map[string]string) (<-chan []byte, error) {
+	// Get request ID for trace file
+	requestID := "unknown"
+	if id, ok := ctx.Value(ctxKeyRequestID{}).(string); ok && id != "" {
+		requestID = id
+	}
+
+	// Create per-request trace file
+	traceFile := createTraceFileForRequest(p.name, requestID)
+	if traceFile != nil {
+		fmt.Fprintf(traceFile, "{\"type\":\"request\",\"provider\":\"%s\",\"endpoint\":\"%s\",\"url\":\"%s\",\"headers\":%q,\"body\":%s}\n",
+			p.name, endpoint, p.baseURL+endpoint, headers, body)
+	}
+
+	// TRACE: Log the streaming request being sent to provider
+	logger.Trace("Provider stream request",
+		"provider", p.name,
+		"endpoint", endpoint,
+		"url", p.baseURL+endpoint,
+		"headers", headers,
+		"body", prettyPrintJSON(body))
+
 	req, err := p.buildRequest(ctx, body, endpoint)
 	if err != nil {
+		if traceFile != nil {
+			traceFile.Close()
+		}
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -660,11 +763,37 @@ func (p *OpenAIProvider) DoStreamRequest(ctx context.Context, endpoint string, b
 
 	resp, err := p.doRequest(ctx, req)
 	if err != nil {
+		if traceFile != nil {
+			traceFile.Close()
+		}
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 
-	if err := p.handleHTTPResponse(resp, false); err != nil {
-		return nil, err
+	// TRACE: Log the stream response status
+	logger.Trace("Provider stream response started",
+		"provider", p.name,
+		"endpoint", endpoint,
+		"status", resp.StatusCode,
+		"content_type", resp.Header.Get("Content-Type"))
+
+	if resp.StatusCode != http.StatusOK {
+		// Read error body for logging
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
+		logger.Trace("Provider stream error response",
+			"provider", p.name,
+			"endpoint", endpoint,
+			"status", resp.StatusCode,
+			"body", string(respBody))
+		if traceFile != nil {
+			fmt.Fprintf(traceFile, "{\"type\":\"error\",\"provider\":\"%s\",\"status\":%d,\"body\":%s}\n",
+				p.name, resp.StatusCode, respBody)
+			traceFile.Close()
+		}
+		resp.Body.Close()
+		if er := openai.ParseErrorResponse(respBody); er != nil {
+			return nil, er
+		}
+		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	// Return raw SSE channel
@@ -672,6 +801,9 @@ func (p *OpenAIProvider) DoStreamRequest(ctx context.Context, endpoint string, b
 	go func() {
 		defer close(ch)
 		defer resp.Body.Close()
+		if traceFile != nil {
+			defer traceFile.Close()
+		}
 
 		scanner := bufio.NewScanner(resp.Body)
 		bufPtr := streamBufferPool.Get().(*[]byte)
@@ -686,6 +818,12 @@ func (p *OpenAIProvider) DoStreamRequest(ctx context.Context, endpoint string, b
 			}
 
 			line := scanner.Text()
+
+			// Dump to trace file in real-time (non-blocking)
+			if traceFile != nil {
+				fmt.Fprintf(traceFile, "{\"type\":\"stream\",\"provider\":\"%s\",\"line\":%q}\n", p.name, line)
+			}
+
 			select {
 			case ch <- []byte(line):
 			case <-ctx.Done():
