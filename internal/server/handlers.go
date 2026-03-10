@@ -172,6 +172,12 @@ func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
+		// Validate request
+		if err := openai.ValidateChatCompletionRequest(body); err != nil {
+			handleError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		// Extract model from request for routing
 		model := extractModelFromRequestBody(body)
 		if model == "" {
@@ -260,6 +266,12 @@ func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate request
+	if err := openai.ValidateCompletionRequest(body); err != nil {
+		handleError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Extract model from request for routing
 	model := extractModelFromRequestBody(body)
 	if model == "" {
@@ -331,6 +343,12 @@ func (s *Server) handleV1Embeddings(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		handleError(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if err := openai.ValidateEmbeddingRequest(body); err != nil {
+		handleError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 

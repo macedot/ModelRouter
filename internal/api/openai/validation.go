@@ -180,19 +180,25 @@ func ValidateEmbeddingRequest(data []byte) error {
 		return ValidationError{Field: "model", Message: "is required"}
 	}
 
-	if input := req["input"]; input == nil {
+	input := req["input"]
+	if input == nil {
 		return ValidationError{Field: "input", Message: "is required"}
 	}
 
 	// Input can be string, array of strings, or array of token arrays
-	switch req["input"].(type) {
-	case string, []interface{}:
-		// Valid
+	switch v := input.(type) {
+	case string:
+		if v == "" {
+			return ValidationError{Field: "input", Message: "cannot be empty"}
+		}
+	case []interface{}:
+		// Valid - array input
 	default:
 		return ValidationError{Field: "input", Message: "must be string or array"}
 	}
 
 	return nil
+
 }
 
 // ValidateModerationRequest validates a moderation request
@@ -204,6 +210,38 @@ func ValidateModerationRequest(data []byte) error {
 
 	if input := req["input"]; input == nil {
 		return ValidationError{Field: "input", Message: "is required"}
+	}
+
+	return nil
+}
+
+// ValidateCompletionRequest validates a completion request
+func ValidateCompletionRequest(data []byte) error {
+	req, err := parseRequestBody(data)
+	if err != nil {
+		return err
+	}
+
+	if model, ok := req["model"]; !ok || model == "" {
+		return ValidationError{Field: "model", Message: "is required"}
+	}
+
+	// Prompt is required for completions
+	prompt := req["prompt"]
+	if prompt == nil {
+		return ValidationError{Field: "prompt", Message: "is required"}
+	}
+
+	// Prompt can be string or array
+	switch v := prompt.(type) {
+	case string:
+		if v == "" {
+			return ValidationError{Field: "prompt", Message: "cannot be empty"}
+		}
+	case []interface{}:
+		// Valid - array of prompts
+	default:
+		return ValidationError{Field: "prompt", Message: "must be string or array"}
 	}
 
 	return nil

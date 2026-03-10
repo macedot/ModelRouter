@@ -4,6 +4,8 @@ package server
 import (
 	"io"
 	"net/http"
+
+	"github.com/macedot/openmodel/internal/api/openai"
 )
 
 // handleV1Moderations handles POST /v1/moderations
@@ -17,6 +19,12 @@ func (s *Server) handleV1Moderations(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		handleError(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if err := openai.ValidateModerationRequest(body); err != nil {
+		handleError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 

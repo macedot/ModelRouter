@@ -1757,6 +1757,228 @@ func TestModerate(t *testing.T) {
 	})
 }
 
+func TestDoRequestMethod(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != "POST" {
+				t.Errorf("expected POST request, got %s", r.Method)
+			}
+			if r.URL.Path != "/v1/chat/completions" {
+				t.Errorf("expected /v1/chat/completions path, got %s", r.URL.Path)
+			}
+			if r.Header.Get("Content-Type") != "application/json" {
+				t.Errorf("expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
+			}
+			if r.Header.Get("Authorization") != "Bearer test-api-key" {
+				t.Errorf("expected Authorization header, got %s", r.Header.Get("Authorization"))
+			}
+			if r.Header.Get("X-Custom-Header") != "custom-value" {
+				t.Errorf("expected X-Custom-Header, got %s", r.Header.Get("X-Custom-Header"))
+			}
+
+			// Echo back the request body
+			body, _ := io.ReadAll(r.Body)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(body)
+		}))
+		defer server.Close()
+
+		provider := newTestProvider(server.URL)
+		ctx := context.Background()
+
+		body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}`)
+		headers := map[string]string{"X-Custom-Header": "custom-value"}
+		resp, err := provider.DoRequest(ctx, "/v1/chat/completions", body, headers)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify response contains the original request
+		var result map[string]any
+		if err := json.Unmarshal(resp, &result); err != nil {
+			t.Fatalf("failed to parse response: %v", err)
+		}
+		if result["model"] != "gpt-4" {
+			t.Errorf("expected model gpt-4, got %v", result["model"])
+		}
+	})
+
+	t.Run("error_status_code", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(openai.ErrorResponse{
+				Err: &openai.ErrorDetail{
+					Message: "internal server error",
+					Type:    "server_error",
+				},
+			})
+		}))
+		defer server.Close()
+
+		provider := newTestProvider(server.URL)
+		ctx := context.Background()
+
+		body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}`)
+		_, err := provider.DoRequest(ctx, "/v1/chat/completions", body, nil)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("with_additional_headers", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Request-ID") != "req-123" {
+				t.Errorf("expected X-Request-ID header, got %s", r.Header.Get("X-Request-ID"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"status":"ok"}`))
+		}))
+		defer server.Close()
+
+		provider := newTestProvider(server.URL)
+		ctx := context.Background()
+
+		body := []byte(`{}`)
+		headers := map[string]string{"X-Request-ID": "req-123"}
+		_, err := provider.DoRequest(ctx, "/v1/test", body, headers)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestDoStreamRequest(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != "POST" {
+				t.Errorf("expected POST request, got %s", r.Method)
+			}
+			if r.URL.Path != "/v1/chat/completions" {
+				t.Errorf("expected /v1/chat/completions path, got %s", r.URL.Path)
+			}
+			if r.Header.Get("Content-Type") != "application/json" {
+				t.Errorf("expected Content-Type application/json, got %s", r.Header.Get("Content-Type"))
+			}
+
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Transfer-Encoding", "chunked")
+
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Fatal("expected http.Flusher")
+			}
+
+			// Send SSE data
+			w.Write([]byte("data: {\"content\":\"test\"}\n\n"))
+			flusher.Flush()
+			w.Write([]byte("data: [DONE]\n\n"))
+			flusher.Flush()
+		}))
+		defer server.Close()
+
+		provider := newTestProvider(server.URL)
+		ctx := context.Background()
+
+		body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}],"stream":true}`)
+		stream, err := provider.DoStreamRequest(ctx, "/v1/chat/completions", body, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Read from stream
+		var lines []string
+		for line := range stream {
+			lines = append(lines, string(line))
+		}
+
+		if len(lines) < 1 {
+			t.Error("expected at least one line from stream")
+		}
+		if lines[0] != "data: {\"content\":\"test\"}" {
+			t.Errorf("unexpected first line: %s", lines[0])
+		}
+	})
+
+	t.Run("error_status_code", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(openai.ErrorResponse{
+				Err: &openai.ErrorDetail{
+					Message: "bad request",
+					Type:    "invalid_request_error",
+				},
+			})
+		}))
+		defer server.Close()
+
+		provider := newTestProvider(server.URL)
+		ctx := context.Background()
+
+		body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}],"stream":true}`)
+		_, err := provider.DoStreamRequest(ctx, "/v1/chat/completions", body, nil)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("with_additional_headers", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Request-ID") != "req-456" {
+				t.Errorf("expected X-Request-ID header, got %s", r.Header.Get("X-Request-ID"))
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Write([]byte("data: {\"test\":\"data\"}\n\n"))
+		}))
+		defer server.Close()
+
+		provider := newTestProvider(server.URL)
+		ctx := context.Background()
+
+		body := []byte(`{"stream":true}`)
+		headers := map[string]string{"X-Request-ID": "req-456"}
+		stream, err := provider.DoStreamRequest(ctx, "/v1/test", body, headers)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Drain the stream
+		for range stream {
+		}
+	})
+
+	t.Run("context_cancellation", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			// Send one line then wait
+			w.Write([]byte("data: {\"content\":\"start\"}\n\n"))
+			w.(http.Flusher).Flush()
+			// Simulate slow stream
+			time.Sleep(100 * time.Millisecond)
+			w.Write([]byte("data: {\"content\":\"end\"}\n\n"))
+		}))
+		defer server.Close()
+
+		provider := newTestProvider(server.URL)
+		ctx, cancel := context.WithCancel(context.Background())
+
+		body := []byte(`{"stream":true}`)
+		stream, err := provider.DoStreamRequest(ctx, "/v1/test", body, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Read first line then cancel context
+		<-stream
+		cancel()
+
+		// Stream should close gracefully
+		for range stream {
+		}
+	})
+}
+
 // BenchmarkChat benchmarks the Chat method
 func BenchmarkChat(b *testing.B) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

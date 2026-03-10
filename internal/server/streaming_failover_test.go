@@ -17,14 +17,14 @@ import (
 
 // mockStreamProvider is a provider that can be configured to fail or succeed on streaming
 type mockStreamProvider struct {
-	nameVal               string
-	streamErr             error        // Error to return when starting stream
-	streamData            []string     // Data to stream (for raw streaming)
-	midStreamErr          error        // Error to send mid-stream
-	streamCloseAfter      int          // Close stream after N messages (for mid-stream errors)
-	streamCallCount       int          // Track how many times StreamChat was called
-	streamChatResult      []openai.ChatCompletionResponse
-	streamCompleteResult  []openai.CompletionResponse
+	nameVal              string
+	streamErr            error    // Error to return when starting stream
+	streamData           []string // Data to stream (for raw streaming)
+	midStreamErr         error    // Error to send mid-stream
+	streamCloseAfter     int      // Close stream after N messages (for mid-stream errors)
+	streamCallCount      int      // Track how many times StreamChat was called
+	streamChatResult     []openai.ChatCompletionResponse
+	streamCompleteResult []openai.CompletionResponse
 }
 
 func (m *mockStreamProvider) Name() string { return m.nameVal }
@@ -97,11 +97,25 @@ func (m *mockStreamProvider) Moderate(ctx context.Context, input string) (*opena
 }
 
 func (m *mockStreamProvider) DoRequest(ctx context.Context, endpoint string, body []byte, headers map[string]string) ([]byte, error) {
-	return nil, errors.New("not implemented")
+	// For streaming tests, return a simple response
+	return []byte(`{"id":"test","object":"chat.completion","choices":[{"message":{"content":"test"}}]}`), nil
 }
 
 func (m *mockStreamProvider) DoStreamRequest(ctx context.Context, endpoint string, body []byte, headers map[string]string) (<-chan []byte, error) {
-	return nil, errors.New("not implemented")
+	m.streamCallCount++
+	if m.streamErr != nil {
+		return nil, m.streamErr
+	}
+
+	ch := make(chan []byte, len(m.streamData)+1)
+	go func() {
+		defer close(ch)
+		for _, data := range m.streamData {
+			ch <- []byte(data)
+		}
+	}()
+
+	return ch, nil
 }
 
 // TestStreamFailover tests the streaming failover logic for chat completions
@@ -268,7 +282,7 @@ func TestStreamWithFailoverHelper(t *testing.T) {
 		stateMgr := state.New(cfg.Thresholds.InitialTimeout)
 
 		mock := &mockStreamProvider{
-			nameVal:    "mock",
+			nameVal: "mock",
 			streamData: []string{
 				`data: {"choices":[{"delta":{"content":"Hello"}}]}`,
 				`data: [DONE]`,

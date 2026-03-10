@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -109,11 +108,127 @@ func (m *mockProvider) Moderate(ctx context.Context, input string) (*openai.Mode
 }
 
 func (m *mockProvider) DoRequest(ctx context.Context, endpoint string, body []byte, headers map[string]string) ([]byte, error) {
-	return nil, errors.New("not implemented")
+	// Check for configured error
+	if m.chatErr != nil {
+		return nil, m.chatErr
+	}
+
+	// Return appropriate response based on endpoint
+	switch endpoint {
+	case "/v1/chat/completions":
+		if m.chatResult != nil {
+			return json.Marshal(m.chatResult)
+		}
+		// Default response
+		return json.Marshal(&openai.ChatCompletionResponse{
+			ID:      "chatcmpl-test",
+			Object:  "chat.completion",
+			Created: time.Now().Unix(),
+			Model:   "test-model",
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Index:        0,
+					Message:      &openai.ChatCompletionMessage{Role: "assistant", Content: "Mock response"},
+					FinishReason: "stop",
+				},
+			},
+		})
+
+	case "/v1/completions":
+		if m.completeResult != nil {
+			return json.Marshal(m.completeResult)
+		}
+		// Default response
+		return json.Marshal(&openai.CompletionResponse{
+			ID:      "cmpl-test",
+			Object:  "text_completion",
+			Created: time.Now().Unix(),
+			Model:   "test-model",
+			Choices: []openai.CompletionChoice{
+				{Text: "Mock completion", Index: 0, FinishReason: "stop"},
+			},
+		})
+
+	case "/v1/embeddings":
+		if m.embedResult != nil {
+			return json.Marshal(m.embedResult)
+		}
+		// Default response
+		return json.Marshal(&openai.EmbeddingResponse{
+			Object: "list",
+			Data: []openai.EmbeddingData{
+				{Object: "embedding", Index: 0, Embedding: []float64{0.1, 0.2, 0.3}},
+			},
+			Model: "embedding-model",
+		})
+
+	case "/v1/moderations":
+		if m.moderateResult != nil {
+			return json.Marshal(m.moderateResult)
+		}
+		// Default response
+		return json.Marshal(&openai.ModerationResponse{
+			ID:      "modr-test",
+			Model:   "text-moderation-latest",
+			Results: []openai.ModerationResult{{Flagged: false}},
+		})
+
+	default:
+		return nil, fmt.Errorf("unknown endpoint: %s", endpoint)
+	}
 }
 
 func (m *mockProvider) DoStreamRequest(ctx context.Context, endpoint string, body []byte, headers map[string]string) (<-chan []byte, error) {
-	return nil, errors.New("not implemented")
+	// Check for configured error
+	if m.streamChatErr != nil {
+		return nil, m.streamChatErr
+	}
+
+	ch := make(chan []byte, 10)
+
+	switch endpoint {
+	case "/v1/chat/completions":
+		go func() {
+			defer close(ch)
+			// Send mock SSE data
+			if len(m.chatStreamResult) > 0 {
+				for _, resp := range m.chatStreamResult {
+					data, _ := json.Marshal(resp)
+					ch <- []byte("data: " + string(data))
+				}
+			} else {
+				// Default streaming response
+				ch <- []byte(`data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1234567890,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}`)
+				ch <- []byte(`data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1234567890,"model":"test-model","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":"stop"}]}`)
+			}
+			ch <- []byte("data: [DONE]")
+		}()
+
+	case "/v1/completions":
+		go func() {
+			defer close(ch)
+			// Send mock SSE data
+			if len(m.completeStreamResult) > 0 {
+				for _, resp := range m.completeStreamResult {
+					data, _ := json.Marshal(resp)
+					ch <- []byte("data: " + string(data))
+				}
+			} else {
+				// Default streaming response
+				ch <- []byte(`data: {"id":"cmpl-test","object":"text_completion","created":1234567890,"model":"test-model","choices":[{"text":"Hello","index":0}]}`)
+				ch <- []byte(`data: {"id":"cmpl-test","object":"text_completion","created":1234567890,"model":"test-model","choices":[{"text":"!","index":0,"finish_reason":"stop"}]}`)
+			}
+			ch <- []byte("data: [DONE]")
+		}()
+
+	default:
+		go func() {
+			defer close(ch)
+			ch <- []byte(fmt.Sprintf("data: {\"error\":\"unknown endpoint: %s\"}", endpoint))
+		}()
+	}
+
+	return ch, nil
 }
 
 func newTestServer(t *testing.T, mockProv *mockProvider) *Server {
