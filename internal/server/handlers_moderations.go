@@ -2,10 +2,8 @@
 package server
 
 import (
+	"io"
 	"net/http"
-
-	"github.com/macedot/openmodel/internal/api/openai"
-	"github.com/macedot/openmodel/internal/logger"
 )
 
 // handleV1Moderations handles POST /v1/moderations
@@ -14,10 +12,16 @@ func (s *Server) handleV1Moderations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req openai.ModerationRequest
-	if !readAndValidateRequest(w, r, 10*1024*1024, openai.ValidateModerationRequest, &req) {
+	// Read raw request body
+	limitRequestBody(w, r, 10*1024*1024)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		handleError(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	// Extract headers to forward
+	forwardHeaders := extractForwardHeaders(r)
 
 	// Use first available provider for moderation (with read lock)
 	s.providersMu.RLock()
@@ -27,13 +31,12 @@ func (s *Server) handleV1Moderations(w http.ResponseWriter, r *http.Request) {
 		// Set provider in context for logging
 		*r = *r.WithContext(setProviderContext(r.Context(), name, "moderation"))
 
-		resp, err := prov.Moderate(r.Context(), req.Input)
+		resp, err := prov.DoRequest(r.Context(), "/v1/moderations", body, forwardHeaders)
 		if err != nil {
-			logger.Error("Moderation failed", "provider", name, "error", err)
 			continue
 		}
 
-		encodeJSON(w, resp)
+		s.handleProviderSuccessRaw(w, name, resp)
 		return
 	}
 

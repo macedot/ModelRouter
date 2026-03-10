@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -143,6 +144,19 @@ func (s *Server) handleV1Model(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// extractForwardHeaders extracts headers that should be forwarded to providers.
+// This includes Authorization and X-Request-ID for tracing.
+func extractForwardHeaders(r *http.Request) map[string]string {
+	headers := make(map[string]string)
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		headers["Authorization"] = auth
+	}
+	if requestID := r.Header.Get("X-Request-ID"); requestID != "" {
+		headers["X-Request-ID"] = requestID
+	}
+	return headers
+}
+
 // handleV1ChatCompletions handles GET and POST /v1/chat/completions
 func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -150,23 +164,46 @@ func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request)
 		s.handleV1ChatCompletionsList(w, r)
 		return
 	case http.MethodPost:
-		// POST /v1/chat/completions - create completion
-		var req openai.ChatCompletionRequest
-		if !readAndValidateRequest(w, r, 50*1024*1024, openai.ValidateChatCompletionRequest, &req) {
+		// Read raw request body
+		limitRequestBody(w, r, 50*1024*1024)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			handleError(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		// Check if model exists before trying providers
-		if err := s.validateModel(req.Model); err != nil {
+		// Extract model from request for routing
+		model := extractModelFromRequestBody(body)
+		if model == "" {
+			handleError(w, "model is required", http.StatusBadRequest)
+			return
+		}
+
+		// Check if model exists in config
+		if err := s.validateModel(model); err != nil {
 			handleError(w, err.Error(), http.StatusNotFound)
 			return
 		}
 
-		if req.Stream {
+		// Extract headers to forward
+		forwardHeaders := extractForwardHeaders(r)
+
+		// Check if streaming request
+		isStreaming := false
+		var reqMap map[string]any
+		if err := json.Unmarshal(body, &reqMap); err == nil {
+			if stream, ok := reqMap["stream"].(bool); ok {
+				isStreaming = stream
+			}
+		}
+
+		if isStreaming {
 			// For streaming, use streamWithFailover for automatic retry
-			err := s.streamWithFailover(w, r, req.Model, "",
+			err := s.streamWithFailover(w, r, model, "",
 				func(ctx context.Context, prov provider.Provider, providerModel string) (<-chan []byte, error) {
-					return prov.StreamChatRaw(ctx, providerModel, req.Messages, &req)
+					// Replace model name in body with provider model
+					provBody := replaceModelInBody(body, providerModel)
+					return prov.DoStreamRequest(ctx, "/v1/chat/completions", provBody, forwardHeaders)
 				},
 				func(w http.ResponseWriter, r *http.Request, stream <-chan []byte, providerKey string) error {
 					return writeRawStream(w, r, stream, providerKey)
@@ -178,9 +215,12 @@ func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		resp, providerKey, err := s.executeWithFailover(r, req.Model, "",
+		// Non-streaming: forward request
+		resp, providerKey, err := s.executeWithFailover(r, model, "",
 			func(ctx context.Context, prov provider.Provider, providerModel string) (any, error) {
-				return prov.Chat(ctx, providerModel, req.Messages, &req)
+				// Replace model name in body with provider model
+				provBody := replaceModelInBody(body, providerModel)
+				return prov.DoRequest(ctx, "/v1/chat/completions", provBody, forwardHeaders)
 			},
 		)
 		if err != nil {
@@ -188,7 +228,8 @@ func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		s.handleProviderSuccess(w, providerKey, resp)
+		// Return response as-is (already JSON bytes)
+		s.handleProviderSuccessRaw(w, providerKey, resp.([]byte))
 		return
 	default:
 		handleError(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -211,51 +252,49 @@ func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Note: CompletionRequest uses ChatCompletionRequest structure under the hood
-	// We validate by decoding and checking required fields manually
-	// since we don't have a raw-bytes validator for completions
-	var req openai.CompletionRequest
-	if !readAndValidateRequest(w, r, 50*1024*1024, nil, &req) {
+	// Read raw request body
+	limitRequestBody(w, r, 50*1024*1024)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		handleError(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Manual validation for completion request
-	if req.Model == "" {
+	// Extract model from request for routing
+	model := extractModelFromRequestBody(body)
+	if model == "" {
 		handleError(w, "model is required", http.StatusBadRequest)
 		return
 	}
-	if req.Prompt == nil {
-		handleError(w, "prompt is required", http.StatusBadRequest)
-		return
-	}
-	// Check if prompt is empty string or empty array
-	switch p := req.Prompt.(type) {
-	case string:
-		if p == "" {
-			handleError(w, "prompt cannot be empty", http.StatusBadRequest)
-			return
-		}
-	case []any:
-		if len(p) == 0 {
-			handleError(w, "prompt array cannot be empty", http.StatusBadRequest)
-			return
-		}
-	}
 
-	// Check if model exists before trying providers
-	if _, exists := s.config.Models[req.Model]; !exists {
-		handleError(w, modelNotFoundError(req.Model).Error(), http.StatusNotFound)
+	// Check if model exists in config
+	if err := s.validateModel(model); err != nil {
+		handleError(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	if req.Stream {
-		// For streaming, use streamWithFailoverTyped for automatic retry
-		err := streamWithFailoverTyped(s, w, r, req.Model, "",
-			func(ctx context.Context, prov provider.Provider, providerModel string) (<-chan openai.CompletionResponse, error) {
-				return prov.StreamComplete(ctx, providerModel, &req)
+	// Extract headers to forward
+	forwardHeaders := extractForwardHeaders(r)
+
+	// Check if streaming request
+	isStreaming := false
+	var reqMap map[string]any
+	if err := json.Unmarshal(body, &reqMap); err == nil {
+		if stream, ok := reqMap["stream"].(bool); ok {
+			isStreaming = stream
+		}
+	}
+
+	if isStreaming {
+		// For streaming, use streamWithFailover for automatic retry
+		err := s.streamWithFailover(w, r, model, "",
+			func(ctx context.Context, prov provider.Provider, providerModel string) (<-chan []byte, error) {
+				// Replace model name in body with provider model
+				provBody := replaceModelInBody(body, providerModel)
+				return prov.DoStreamRequest(ctx, "/v1/completions", provBody, forwardHeaders)
 			},
-			func(w http.ResponseWriter, r *http.Request, stream <-chan openai.CompletionResponse, providerKey string) error {
-				return s.writeCompletionStream(w, r, stream, providerKey, req.Model)
+			func(w http.ResponseWriter, r *http.Request, stream <-chan []byte, providerKey string) error {
+				return writeRawStream(w, r, stream, providerKey)
 			},
 		)
 		if err != nil {
@@ -264,9 +303,12 @@ func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, providerKey, err := s.executeWithFailover(r, req.Model, "",
+	// Non-streaming: forward request
+	resp, providerKey, err := s.executeWithFailover(r, model, "",
 		func(ctx context.Context, prov provider.Provider, providerModel string) (any, error) {
-			return prov.Complete(ctx, providerModel, &req)
+			// Replace model name in body with provider model
+			provBody := replaceModelInBody(body, providerModel)
+			return prov.DoRequest(ctx, "/v1/completions", provBody, forwardHeaders)
 		},
 	)
 	if err != nil {
@@ -274,7 +316,8 @@ func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.handleProviderSuccess(w, providerKey, resp)
+	// Return response as-is (already JSON bytes)
+	s.handleProviderSuccessRaw(w, providerKey, resp.([]byte))
 }
 
 // handleV1Embeddings handles POST /v1/embeddings
@@ -283,33 +326,36 @@ func (s *Server) handleV1Embeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req openai.EmbeddingRequest
-	if !readAndValidateRequest(w, r, 50*1024*1024, openai.ValidateEmbeddingRequest, &req) {
+	// Read raw request body
+	limitRequestBody(w, r, 50*1024*1024)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		handleError(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Additional validation: check for empty input (not covered by spec validator)
-	if req.Input == "" {
-		handleError(w, "input cannot be empty", http.StatusBadRequest)
-		return
-	}
-	if arr, ok := req.Input.([]any); ok && len(arr) == 0 {
-		handleError(w, "input array cannot be empty", http.StatusBadRequest)
+	// Extract model from request for routing
+	model := extractModelFromRequestBody(body)
+	if model == "" {
+		handleError(w, "model is required", http.StatusBadRequest)
 		return
 	}
 
-	// Check if model exists before trying providers
-	if _, exists := s.config.Models[req.Model]; !exists {
-		handleError(w, modelNotFoundError(req.Model).Error(), http.StatusNotFound)
+	// Check if model exists in config
+	if err := s.validateModel(model); err != nil {
+		handleError(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	// Convert input to string slice
-	input := convertInputToSlice(req.Input)
+	// Extract headers to forward
+	forwardHeaders := extractForwardHeaders(r)
 
-	resp, providerKey, err := s.executeWithFailover(r, req.Model, "",
+	// Forward request (embeddings never stream)
+	resp, providerKey, err := s.executeWithFailover(r, model, "",
 		func(ctx context.Context, prov provider.Provider, providerModel string) (any, error) {
-			return prov.Embed(ctx, providerModel, input)
+			// Replace model name in body with provider model
+			provBody := replaceModelInBody(body, providerModel)
+			return prov.DoRequest(ctx, "/v1/embeddings", provBody, forwardHeaders)
 		},
 	)
 	if err != nil {
@@ -317,7 +363,8 @@ func (s *Server) handleV1Embeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.handleProviderSuccess(w, providerKey, resp)
+	// Return response as-is (already JSON bytes)
+	s.handleProviderSuccessRaw(w, providerKey, resp.([]byte))
 }
 
 // convertInputToSlice converts embedding input to string slice
@@ -354,4 +401,14 @@ func (s *Server) handleAllProvidersFailed(w http.ResponseWriter, lastErr error) 
 	w.WriteHeader(http.StatusServiceUnavailable)
 
 	encodeJSON(w, map[string]string{"error": errMsg})
+}
+
+// handleProviderSuccessRaw handles a successful raw response from a provider.
+// It writes the raw bytes as-is to the response writer.
+func (s *Server) handleProviderSuccessRaw(w http.ResponseWriter, providerKey string, response []byte) {
+	s.state.ResetModel(providerKey)
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(response); err != nil {
+		logger.Error("Failed to write response", "error", err)
+	}
 }
