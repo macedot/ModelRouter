@@ -5,12 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"strings"
 
-	"github.com/google/uuid"
-	"github.com/macedot/openmodel/internal/api/claude"
-	"github.com/macedot/openmodel/internal/api/openai"
 	"github.com/macedot/openmodel/internal/logger"
 	"github.com/macedot/openmodel/internal/provider"
 )
@@ -19,28 +16,37 @@ import (
 const AnthropicVersionHeader = "anthropic-version"
 
 // handleV1Messages handles POST /v1/messages (Claude API)
+// This is a passthrough proxy - requests are forwarded as-is to the provider.
 func (s *Server) handleV1Messages(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
-	// Validate required headers (anthropic-version is required, x-api-key is optional)
+	// Validate required headers (anthropic-version is required)
 	anthropicVersion := r.Header.Get(AnthropicVersionHeader)
 	if anthropicVersion == "" {
 		handleError(w, "anthropic-version header is required", http.StatusBadRequest)
 		return
 	}
 
-	// x-api-key is optional - can be used for client identification but not required
+	// Read request body with size limit
+	const maxBodySize = 50 * 1024 * 1024 // 50MB
+	limitRequestBody(w, r, maxBodySize)
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodySize))
+	if err != nil {
+		handleError(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	// Parse Claude request
-	var req claude.Request
-	if !readAndValidateRequest(w, r, 50*1024*1024, claude.ValidateRequestBytes, &req) {
+	// Extract model name from request body
+	model := extractModelFromRequestBody(body)
+	if model == "" {
+		handleError(w, "model is required", http.StatusBadRequest)
 		return
 	}
 
 	// Check if model exists in config
-	if err := s.validateModel(req.Model); err != nil {
+	if err := s.validateModel(model); err != nil {
 		// Return Claude API style error
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -54,18 +60,33 @@ func (s *Server) handleV1Messages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Stream {
-		// Handle streaming
-		s.handleV1MessagesStream(w, r, &req)
+	// Check if streaming is requested
+	var isStreaming bool
+	var reqMap map[string]any
+	if err := json.Unmarshal(body, &reqMap); err == nil {
+		if stream, ok := reqMap["stream"].(bool); ok {
+			isStreaming = stream
+		}
+	}
+
+	if isStreaming {
+		s.handleV1MessagesStreamPassthrough(w, r, body, model, anthropicVersion)
 		return
 	}
 
-	// Handle non-streaming request
-	openaiReq := claude.ToOpenAIRequest(&req)
-
-	resp, providerKey, err := s.executeWithFailover(r, req.Model, "",
+	// Non-streaming request
+	resp, providerKey, err := s.executeWithFailover(r, model, "",
 		func(ctx context.Context, prov provider.Provider, providerModel string) (any, error) {
-			return prov.Chat(ctx, providerModel, openaiReq.Messages, openaiReq)
+			// Replace model name in body
+			modifiedBody := replaceModelInBody(body, providerModel)
+
+			// Build headers for Claude API
+			headers := map[string]string{
+				AnthropicVersionHeader: anthropicVersion,
+			}
+
+			// Forward request to provider's /v1/messages endpoint
+			return prov.DoRequest(ctx, "/v1/messages", modifiedBody, headers)
 		},
 	)
 	if err != nil {
@@ -73,240 +94,77 @@ func (s *Server) handleV1Messages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert OpenAI response to Claude response
-	openaiResp, ok := resp.(*openai.ChatCompletionResponse)
+	// Response is already in Claude format, return as-is
+	respBody, ok := resp.([]byte)
 	if !ok {
 		handleError(w, "invalid response from provider", http.StatusInternalServerError)
 		return
 	}
 
-	claudeResp := claude.ToClaudeResponse(openaiResp, req.Model)
-
-	// Use request ID if available, otherwise generate
-	if openaiResp.ID != "" {
-		claudeResp.ID = openaiResp.ID
-	}
-
-	s.handleProviderSuccess(w, providerKey, claudeResp)
+	s.state.ResetModel(providerKey)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(respBody)
 }
 
-// handleV1MessagesStream handles streaming POST /v1/messages
-func (s *Server) handleV1MessagesStream(w http.ResponseWriter, r *http.Request, req *claude.Request) {
-	// Convert to OpenAI request with streaming enabled
-	openaiReq := claude.ToOpenAIRequestWithStream(req)
+// handleV1MessagesStreamPassthrough handles streaming POST /v1/messages
+// This forwards the streaming request and returns raw SSE events without adding [DONE].
+func (s *Server) handleV1MessagesStreamPassthrough(w http.ResponseWriter, r *http.Request, body []byte, model, anthropicVersion string) {
+	// Use streamWithFailover with custom stream function
+	err := s.streamWithFailover(w, r, model, "",
+		func(ctx context.Context, prov provider.Provider, providerModel string) (<-chan []byte, error) {
+			// Replace model name in body
+			modifiedBody := replaceModelInBody(body, providerModel)
 
-	var triedProviders []string
+			// Build headers for Claude API
+			headers := map[string]string{
+				AnthropicVersionHeader: anthropicVersion,
+			}
 
-	for {
-		// Find available provider
-		prov, providerKey, providerModel, err := s.findProviderWithFailover(req.Model, "")
-		if err != nil {
-			// All providers exhausted - log ERROR and return
-			logger.Error("All providers failed for Claude streaming request",
-				"model", req.Model,
-				"providers_tried", triedProviders,
-				"error", err)
-			s.handleAllProvidersFailed(w, err)
-			return
-		}
+			// Forward streaming request to provider's /v1/messages endpoint
+			return prov.DoStreamRequest(ctx, "/v1/messages", modifiedBody, headers)
+		},
+		func(w http.ResponseWriter, r *http.Request, stream <-chan []byte, providerKey string) error {
+			return writeRawStreamNoDone(w, r, stream, providerKey)
+		},
+	)
 
-		// Track which providers we've tried
-		triedProviders = append(triedProviders, providerKey)
-
-		// Get threshold for this provider
-		threshold := s.config.GetThresholds(providerKey).FailuresBeforeSwitch
-
-		// Set provider/model in context for logging
-		*r = *r.WithContext(setProviderContext(r.Context(), providerKey, req.Model))
-
-		// Try to establish stream
-		stream, err := prov.StreamChat(r.Context(), providerModel, openaiReq.Messages, openaiReq)
-		if err != nil {
-			// Connection failed - log WARN and try next provider
-			logger.Warn("Provider stream connection failed, trying next provider",
-				"provider", providerKey,
-				"error", err)
-			s.state.RecordFailure(providerKey, threshold)
-			continue
-		}
-
-		// Stream established successfully - process it
-		streamErr := s.writeClaudeStream(w, r, stream, providerKey, req.Model, threshold)
-		if streamErr == nil {
-			// Stream completed successfully
-			s.state.ResetModel(providerKey)
-			return
-		}
-
-		// Stream failed mid-stream - drain remaining messages and try next provider
-		drainStreamTyped(stream)
-		logger.Warn("Provider stream failed mid-stream, trying next provider",
-			"provider", providerKey,
-			"error", streamErr)
-		s.state.RecordFailure(providerKey, threshold)
-		// Continue to next provider
+	if err != nil {
+		s.handleAllProvidersFailed(w, err)
 	}
 }
 
-// writeClaudeStream writes a Claude-compatible SSE stream from an OpenAI chat stream.
-// Returns error if stream fails mid-way.
-func (s *Server) writeClaudeStream(w http.ResponseWriter, r *http.Request, stream <-chan openai.ChatCompletionResponse, providerKey, model string, threshold int) error {
-	completionID := "msg_" + uuid.New().String()[:8]
-
-	// Set up SSE headers for Claude streaming
+// writeRawStreamNoDone writes raw SSE lines to the response writer without adding [DONE].
+// This is used for Claude API streaming which uses message_stop event instead of [DONE] marker.
+func writeRawStreamNoDone(w http.ResponseWriter, r *http.Request, stream <-chan []byte, providerKey string) error {
+	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
+	// Flush headers
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return fmt.Errorf("streaming not supported")
 	}
-
-	// Flush headers
 	flusher.Flush()
 
-	// Write message_start event
-	messageStart := &claude.StreamEvent{
-		Type: "message_start",
-		Message: &claude.Response{
-			ID:      completionID,
-			Type:    "message",
-			Role:    "assistant",
-			Model:   model,
-			Content: []claude.ContentBlock{},
-			Usage:   claude.Usage{},
-		},
-	}
-	if err := writeClaudeStreamEvent(w, flusher, messageStart); err != nil {
-		return err
-	}
-
-	// Write content_block_start
-	contentBlockStart := &claude.StreamEvent{
-		Type:         "content_block_start",
-		Index:        0,
-		ContentBlock: &claude.ContentBlock{Type: "text"},
-	}
-	if err := writeClaudeStreamEvent(w, flusher, contentBlockStart); err != nil {
-		return err
-	}
-
-	// Stream content blocks
-	contentIndex := 0
-	for resp := range stream {
-		// Check if client disconnected
+	// Forward raw SSE lines to client
+	for line := range stream {
+		// Check for client disconnect
 		if checkClientDisconnect(r) {
 			logger.Info("Client disconnected, closing stream", "provider", providerKey)
 			return fmt.Errorf("client disconnected")
 		}
 
-		for _, choice := range resp.Choices {
-			if choice.Delta == nil {
-				continue
-			}
-
-			// Write content delta
-			event := &claude.StreamEvent{
-				Type:  "content_block_delta",
-				Index: contentIndex,
-				ContentBlock: &claude.ContentBlock{
-					Type: "text",
-					Text: choice.Delta.Content,
-				},
-			}
-			if err := writeClaudeStreamEvent(w, flusher, event); err != nil {
-				return err
-			}
-
-			// Check for finish
-			if choice.FinishReason != "" && choice.FinishReason != "null" {
-				// Write content_block_stop
-				contentBlockStop := &claude.StreamEvent{
-					Type:  "content_block_stop",
-					Index: contentIndex,
-				}
-				if err := writeClaudeStreamEvent(w, flusher, contentBlockStop); err != nil {
-					return err
-				}
-
-				// Write message_delta
-				stopReason := "end_turn"
-				if choice.FinishReason == "length" {
-					stopReason = "max_tokens"
-				}
-
-				messageDelta := &claude.StreamEvent{
-					Type: "message_delta",
-					Message: &claude.Response{
-						StopReason: stopReason,
-						Usage: claude.Usage{
-							OutputTokens: 1, // Estimate
-						},
-					},
-				}
-				if err := writeClaudeStreamEvent(w, flusher, messageDelta); err != nil {
-					return err
-				}
-			}
+		// Write raw line as-is (already in SSE format with "data: " prefix from provider)
+		if _, err := fmt.Fprintf(w, "%s\n\n", line); err != nil {
+			return fmt.Errorf("failed to write stream chunk: %w", err)
 		}
-	}
-
-	// Write message_stop
-	messageStop := &claude.StreamEvent{
-		Type: "message_stop",
-	}
-	if err := writeClaudeStreamEvent(w, flusher, messageStop); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// writeClaudeStreamEvent writes a Claude streaming event in SSE format
-// Returns error if write fails
-func writeClaudeStreamEvent(w http.ResponseWriter, flusher http.Flusher, event *claude.StreamEvent) error {
-	data, err := json.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("failed to marshal stream event: %w", err)
-	}
-
-	if _, err := w.Write([]byte("data: ")); err != nil {
-		return fmt.Errorf("failed to write SSE prefix: %w", err)
-	}
-	if _, err := w.Write(data); err != nil {
-		return fmt.Errorf("failed to write SSE data: %w", err)
-	}
-	if _, err := w.Write([]byte("\n\n")); err != nil {
-		return fmt.Errorf("failed to write SSE suffix: %w", err)
-	}
-	if flusher != nil {
 		flusher.Flush()
 	}
+
+	// No [DONE] marker for Claude - it uses message_stop event in the stream
 	return nil
-}
-
-// requireClaudeHeaders checks for required Claude API headers
-func requireClaudeHeaders(w http.ResponseWriter, r *http.Request) bool {
-	apiKey := r.Header.Get("x-api-key")
-	if apiKey == "" {
-		handleError(w, "x-api-key header is required", http.StatusUnauthorized)
-		return false
-	}
-
-	version := r.Header.Get(AnthropicVersionHeader)
-	if version == "" {
-		handleError(w, "anthropic-version header is required", http.StatusBadRequest)
-		return false
-	}
-
-	// Validate version format (should be like "2023-06-01")
-	if !strings.Contains(version, "-") {
-		handleError(w, "invalid anthropic-version format", http.StatusBadRequest)
-		return false
-	}
-
-	return true
 }
