@@ -76,6 +76,7 @@ func (s *State) IncrementTimeout(max int) {
 
 // NextRoundRobin returns the next index for round-robin selection for a model
 // total is the total number of available providers
+// Returns the current index and advances to the next for subsequent calls
 func (s *State) NextRoundRobin(model string, total int) int {
 	if total <= 1 {
 		return 0
@@ -83,9 +84,9 @@ func (s *State) NextRoundRobin(model string, total int) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	current := s.roundRobinIndex[model]
-	next := (current + 1) % total
-	s.roundRobinIndex[model] = next
-	return next
+	// Advance to next for subsequent calls
+	s.roundRobinIndex[model] = (current + 1) % total
+	return current
 }
 
 // GetRandomIndex returns a random index between 0 and total-1

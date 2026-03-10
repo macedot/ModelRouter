@@ -572,3 +572,116 @@ func BenchmarkNew(b *testing.B) {
 		_ = New(10000)
 	}
 }
+
+func TestNextRoundRobin(t *testing.T) {
+	tests := []struct {
+		name          string
+		total         int
+		callSequence  []int // Expected return values for consecutive calls
+	}{
+		{
+			name:         "single provider always returns 0",
+			total:        1,
+			callSequence: []int{0, 0, 0, 0},
+		},
+		{
+			name:         "two providers cycles correctly",
+			total:        2,
+			callSequence: []int{0, 1, 0, 1}, // First call returns 0, second returns 1, etc.
+		},
+		{
+			name:         "three providers cycles correctly",
+			total:        3,
+			callSequence: []int{0, 1, 2, 0, 1, 2},
+		},
+		{
+			name:         "five providers cycles correctly",
+			total:        5,
+			callSequence: []int{0, 1, 2, 3, 4, 0, 1},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New(1000)
+
+			for i, wantIdx := range tt.callSequence {
+				gotIdx := s.NextRoundRobin("test-model", tt.total)
+				if gotIdx != wantIdx {
+					t.Errorf("Call %d: NextRoundRobin() = %d, want %d", i, gotIdx, wantIdx)
+				}
+			}
+		})
+	}
+}
+
+func TestNextRoundRobinMultipleModels(t *testing.T) {
+	s := New(1000)
+
+	// Each model should maintain its own round-robin state
+	// First call for model-a should return 0
+	idx1 := s.NextRoundRobin("model-a", 3)
+	if idx1 != 0 {
+		t.Errorf("First call for model-a: NextRoundRobin() = %d, want 0", idx1)
+	}
+
+	// Second call for model-a should return 1
+	idx2 := s.NextRoundRobin("model-a", 3)
+	if idx2 != 1 {
+		t.Errorf("Second call for model-a: NextRoundRobin() = %d, want 1", idx2)
+	}
+
+	// First call for model-b should return 0 (independent state)
+	idx3 := s.NextRoundRobin("model-b", 3)
+	if idx3 != 0 {
+		t.Errorf("First call for model-b: NextRoundRobin() = %d, want 0", idx3)
+	}
+
+	// Third call for model-a should return 2
+	idx4 := s.NextRoundRobin("model-a", 3)
+	if idx4 != 2 {
+		t.Errorf("Third call for model-a: NextRoundRobin() = %d, want 2", idx4)
+	}
+}
+
+func TestGetRandomIndex(t *testing.T) {
+	tests := []struct {
+		name  string
+		total int
+	}{
+		{"single provider", 1},
+		{"two providers", 2},
+		{"ten providers", 10},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New(1000)
+
+			// Run multiple times to ensure it stays in bounds
+			for i := 0; i < 100; i++ {
+				idx := s.GetRandomIndex(tt.total)
+				if idx < 0 || idx >= tt.total {
+					t.Errorf("GetRandomIndex() = %d, want in range [0, %d)", idx, tt.total)
+				}
+			}
+		})
+	}
+}
+
+func TestResetRoundRobin(t *testing.T) {
+	s := New(1000)
+
+	// Advance round-robin state
+	_ = s.NextRoundRobin("model-a", 3) // returns 0, stores 1
+	_ = s.NextRoundRobin("model-a", 3) // returns 1, stores 2
+
+	// Reset it
+	s.ResetRoundRobin("model-a")
+
+	// Should start fresh
+	idx := s.NextRoundRobin("model-a", 3)
+	if idx != 0 {
+		t.Errorf("After reset, NextRoundRobin() = %d, want 0", idx)
+	}
+}
