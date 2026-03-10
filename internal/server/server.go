@@ -5,63 +5,36 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/macedot/openmodel/internal/config"
-	"github.com/macedot/openmodel/internal/logger"
+	applogger "github.com/macedot/openmodel/internal/logger"
 	"github.com/macedot/openmodel/internal/provider"
 	"github.com/macedot/openmodel/internal/state"
+	"github.com/sixafter/nanoid"
 )
 
-// context keys for passing provider/model info to middleware
-type ctxKey string
-
-const (
-	ctxKeyProvider  ctxKey = "provider"
-	ctxKeyModel     ctxKey = "model"
-	ctxKeyRequestID ctxKey = "request_id"
-)
-
-// Server represents the HTTP server
+// Server represents the Fiber HTTP server
 type Server struct {
 	config      *config.Config
 	providers   map[string]provider.Provider
 	state       *state.State
-	httpServer  *http.Server
+	app         *fiber.App
 	providersMu sync.RWMutex
 	limiter     *RateLimiter
-}
-
-// setProviderContext sets provider/model info in context for logging
-func setProviderContext(ctx context.Context, providerName, modelName string) context.Context {
-	ctx = context.WithValue(ctx, ctxKeyProvider, providerName)
-	return context.WithValue(ctx, ctxKeyModel, modelName)
-}
-
-// getProviderFromContext retrieves provider/model info from context
-func getProviderFromContext(ctx context.Context) (provider, model string) {
-	if v := ctx.Value(ctxKeyProvider); v != nil {
-		if s, ok := v.(string); ok {
-			provider = s
-		}
-	}
-	if v := ctx.Value(ctxKeyModel); v != nil {
-		if s, ok := v.(string); ok {
-			model = s
-		}
-	}
-	return
+	version     string
 }
 
 // New creates a new server with the given configuration, providers, and state
-func New(cfg *config.Config, providers map[string]provider.Provider, stateMgr *state.State) *Server {
+func New(cfg *config.Config, providers map[string]provider.Provider, stateMgr *state.State, version string) *Server {
 	srv := &Server{
 		config:    cfg,
 		providers: providers,
 		state:     stateMgr,
+		version:   version,
 	}
 
 	// Initialize rate limiter if enabled
@@ -80,55 +53,102 @@ func New(cfg *config.Config, providers map[string]provider.Provider, stateMgr *s
 	return srv
 }
 
-// loggingMiddleware logs HTTP requests and responses
-// - DEBUG level: logs request/response metadata (method, path, sizes, provider/model)
-// - TRACE level: logs full request/response bodies
-func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// generateRequestID generates a short random request ID
+func generateRequestID() string {
+	return string(nanoid.MustWithLength(10))
+}
+
+// Start starts the Fiber server
+func (s *Server) Start() error {
+	s.app = fiber.New(fiber.Config{
+		ReadTimeout:   DefaultReadTimeout,
+		WriteTimeout:  DefaultWriteTimeout,
+		IdleTimeout:   DefaultIdleTimeout,
+		StrictRouting: true,
+		CaseSensitive: true,
+	})
+
+	// Recovery middleware
+	s.app.Use(recover.New())
+
+	// Request logging middleware - logs received and completed
+	s.app.Use(func(c *fiber.Ctx) error {
 		start := time.Now()
 
-		// Generate request ID for tracing
-		requestID := r.Header.Get("X-Request-ID")
+		// Generate or get request ID
+		requestID := c.Get("X-Request-ID")
 		if requestID == "" {
-			requestID = uuid.New().String()[:8]
+			requestID = generateRequestID()
 		}
-		w.Header().Set("X-Request-ID", requestID)
+		c.Set("X-Request-ID", requestID)
+		c.Locals("request_id", requestID)
 
-		// Add request ID to context for propagation
-		*r = *r.WithContext(context.WithValue(r.Context(), ctxKeyRequestID, requestID))
+		// Log request received
+		applogger.Info("REQUEST",
+			"request_id", requestID,
+			"ip", c.IP(),
+			"method", c.Method(),
+			"path", c.Path(),
+			"size", len(c.Body()),
+		)
 
-		// Read request body for potential logging (max 10MiB)
-		const maxBodySize = 10 * 1024 * 1024
-		requestBody, _ := readRequestBody(r, maxBodySize)
+		// Process request
+		err := c.Next()
 
-		// Extract model from request body for logging
-		requestModel := extractModelFromRequest(requestBody)
+		// Log request completed
+		applogger.Info("RESPONSE",
+			"request_id", requestID,
+			"ip", c.IP(),
+			"method", c.Method(),
+			"path", c.Path(),
+			"status", c.Response().StatusCode(),
+			"latency", time.Since(start).String(),
+			"req_size", len(c.Body()),
+			"res_size", len(c.Response().Body()),
+		)
 
-		// DEBUG: Log request metadata with sizes
-		logRequest(r, r.ContentLength, requestID, requestModel)
-
-		// TRACE: Log full request body
-		if len(requestBody) > 0 {
-			logger.Trace("Request body", "body", prettyPrintJSON(requestBody))
-		}
-
-		// Wrap response writer to capture status code and body
-		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-
-		// Call next handler
-		next.ServeHTTP(wrapped, r)
-
-		// Get provider/model from context if set
-		providerName, modelName := getProviderFromContext(r.Context())
-
-		// DEBUG: Log response metadata
-		logResponse(r, wrapped.statusCode, wrapped.size, time.Since(start), requestID, providerName, modelName)
-
-		// TRACE: Log response body
-		if len(wrapped.body) > 0 {
-			logger.Trace("Response body", "body", prettyPrintJSON(wrapped.body))
-		}
+		return err
 	})
+
+	// Rate limiting middleware
+	if s.limiter != nil {
+		s.app.Use(s.rateLimitMiddleware())
+	}
+
+	// Register routes
+	s.registerRoutes(s.app)
+
+	addr := fmt.Sprintf("%s:%d", s.config.Server.Host, s.config.Server.Port)
+	applogger.Info("server_starting", "addr", addr, "version", s.version)
+	return s.app.Listen(addr)
+}
+
+// Stop gracefully shuts down the server
+func (s *Server) Stop(ctx context.Context) error {
+	if s.app == nil {
+		return nil
+	}
+	applogger.Info("server_shutting_down")
+	return s.app.Shutdown()
+}
+
+// rateLimitMiddleware rate limits requests by IP
+func (s *Server) rateLimitMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if s.limiter == nil {
+			return c.Next()
+		}
+
+		ip := c.IP()
+		if !s.limiter.Allow(ip) {
+			requestID, _ := c.Locals("request_id").(string)
+			applogger.Warn("rate_limit_exceeded", "request_id", requestID, "ip", ip)
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "rate limit exceeded",
+			})
+		}
+		return c.Next()
+	}
 }
 
 // extractModelFromRequest extracts the model name from request body
@@ -145,60 +165,31 @@ func extractModelFromRequest(body []byte) string {
 	return ""
 }
 
-// responseWriter wraps http.ResponseWriter to capture status code and body
-type responseWriter struct {
-	http.ResponseWriter
-	statusCode int
-	size       int
-	body       []byte
+// registerRoutes registers all API routes
+func (s *Server) registerRoutes(app *fiber.App) {
+	// Health endpoints
+	app.Get("/", s.handleRoot)
+	app.Get("/health", s.handleHealth)
+
+	// OpenAI endpoints
+	app.Post("/v1/chat/completions", s.handleV1ChatCompletions)
+
+	// Anthropic endpoints
+	app.Post("/v1/messages", s.handleV1Messages)
 }
 
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.statusCode = code
-	rw.ResponseWriter.WriteHeader(code)
+// handleRoot handles GET /
+func (s *Server) handleRoot(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"name":    "openmodel",
+		"version": s.version,
+		"status":  "running",
+	})
 }
 
-func (rw *responseWriter) Write(b []byte) (int, error) {
-	// Capture body for TRACE logging (limit to 10MiB)
-	if rw.size < 10*1024*1024 {
-		remaining := 10*1024*1024 - rw.size
-		if len(b) > remaining {
-			rw.body = append(rw.body, b[:remaining]...)
-		} else {
-			rw.body = append(rw.body, b...)
-		}
-	}
-	rw.size += len(b)
-	return rw.ResponseWriter.Write(b)
-}
-
-// Start starts the HTTP server
-func (s *Server) Start() error {
-	mux := http.NewServeMux()
-	s.registerRoutes(mux)
-
-	// Build handler chain: rate limit -> logging -> routes
-	handler := http.Handler(mux)
-	handler = s.loggingMiddleware(handler)
-	handler = s.rateLimitMiddleware(handler)
-
-	addr := fmt.Sprintf("%s:%d", s.config.Server.Host, s.config.Server.Port)
-	s.httpServer = &http.Server{
-		Addr:           addr,
-		Handler:        handler,
-		ReadTimeout:    DefaultReadTimeout,
-		WriteTimeout:   DefaultWriteTimeout,
-		IdleTimeout:    DefaultIdleTimeout,
-		MaxHeaderBytes: DefaultMaxHeaderBytes,
-	}
-
-	return s.httpServer.ListenAndServe()
-}
-
-// Stop gracefully shuts down the server
-func (s *Server) Stop(ctx context.Context) error {
-	if s.httpServer == nil {
-		return nil
-	}
-	return s.httpServer.Shutdown(ctx)
+// handleHealth handles GET /health
+func (s *Server) handleHealth(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"status": "ok",
+	})
 }

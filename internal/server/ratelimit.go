@@ -2,7 +2,6 @@
 package server
 
 import (
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -103,38 +102,10 @@ func (rl *RateLimiter) GetStats() (int, int) {
 	return len(rl.buckets), rl.rate
 }
 
-// rateLimitMiddleware limits requests per IP address
-func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip rate limiting if disabled
-		if s.config.RateLimit == nil || !s.config.RateLimit.Enabled {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Get client IP
-		ip := getClientIP(r)
-
-		// Check rate limit
-		if !s.limiter.Allow(ip) {
-			w.Header().Set("Retry-After", "60")
-			w.Header().Set("X-RateLimit-Limit", intToString(s.config.RateLimit.RequestsPerSecond))
-			w.Header().Set("X-RateLimit-Remaining", "0")
-			handleError(w, "rate limit exceeded", http.StatusTooManyRequests)
-			return
-		}
-
-		// Set rate limit headers
-		w.Header().Set("X-RateLimit-Limit", intToString(s.config.RateLimit.RequestsPerSecond))
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-// getClientIP extracts the client IP from request headers
-func getClientIP(r *http.Request) string {
+// getClientIPFiber extracts the client IP from Fiber context
+func getClientIPFiber(c interface{ IP() string; Get(string) string }) string {
 	// Check X-Forwarded-For header (common for proxies)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+	if xff := c.Get("X-Forwarded-For"); xff != "" {
 		// Take the first IP (original client)
 		ips := strings.Split(xff, ",")
 		if len(ips) > 0 {
@@ -146,48 +117,10 @@ func getClientIP(r *http.Request) string {
 	}
 
 	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+	if xri := c.Get("X-Real-IP"); xri != "" {
 		return xri
 	}
 
-	// Fall back to RemoteAddr
-	ip := r.RemoteAddr
-	// Remove port if present
-	if idx := strings.LastIndex(ip, ":"); idx != -1 {
-		// Handle IPv6 addresses (e.g., "[::1]:12345")
-		if ip[0] == '[' {
-			// Extract IPv6 address from brackets
-			endBracket := strings.Index(ip, "]")
-			if endBracket > 1 {
-				return ip[1:endBracket]
-			}
-		}
-		return ip[:idx]
-	}
-	return ip
-}
-
-// intToString converts int to string without importing strconv
-func intToString(n int) string {
-	if n == 0 {
-		return "0"
-	}
-
-	var negative bool
-	if n < 0 {
-		negative = true
-		n = -n
-	}
-
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-
-	if negative {
-		digits = append([]byte{'-'}, digits...)
-	}
-
-	return string(digits)
+	// Fall back to Fiber's IP method
+	return c.IP()
 }

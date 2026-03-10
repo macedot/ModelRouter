@@ -2,16 +2,15 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/macedot/openmodel/internal/api/openai"
 	"github.com/macedot/openmodel/internal/config"
-	"github.com/macedot/openmodel/internal/logger"
+	applogger "github.com/macedot/openmodel/internal/logger"
 	"github.com/macedot/openmodel/internal/provider"
 )
 
@@ -20,273 +19,38 @@ func formatProviderKey(p config.ModelProvider) string {
 	return fmt.Sprintf("%s/%s", p.Provider, p.Model)
 }
 
-// setupStreamHeaders sets up SSE response headers and returns a flusher
-func setupStreamHeaders(w http.ResponseWriter) http.Flusher {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	flusher, _ := w.(http.Flusher)
-	return flusher
-}
-
-// writeSSEChunk writes a data chunk in SSE format with flush
-func writeSSEChunk(w http.ResponseWriter, flusher http.Flusher, data []byte) error {
-	if _, err := w.Write([]byte("data: ")); err != nil {
-		return err
-	}
-	if _, err := w.Write(data); err != nil {
-		return err
-	}
-	if _, err := w.Write([]byte("\n\n")); err != nil {
-		return err
-	}
-	if flusher != nil {
-		flusher.Flush()
-	}
-	return nil
-}
-
-// writeSSEDone writes the SSE [DONE] message with flush
-func writeSSEDone(w http.ResponseWriter, flusher http.Flusher) error {
-	if _, err := w.Write([]byte("data: [DONE]\n\n")); err != nil {
-		return err
-	}
-	if flusher != nil {
-		flusher.Flush()
-	}
-	return nil
-}
-
 // handleError writes an error response
-func handleError(w http.ResponseWriter, message string, statusCode int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
-		logger.Error("Failed to encode error response", "error", err)
-	}
+func handleError(c *fiber.Ctx, message string, statusCode int) error {
+	return c.Status(statusCode).JSON(fiber.Map{"error": message})
 }
 
-// handleRoot handles GET /
-func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
-	}
-	encodeJSON(w, map[string]string{
-		"name":    "openmodel",
-		"version": "0.1.0",
-		"status":  "running",
-	})
-}
-
-// handleHealth handles GET /health
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
-	}
-	w.WriteHeader(http.StatusOK)
-	encodeJSON(w, map[string]string{
-		"status": "ok",
-	})
-}
-
-// handleV1Models handles GET /v1/models
-func (s *Server) handleV1Models(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
-	}
-
-	// Preallocate slice for efficiency
-	models := make([]openai.Model, 0, len(s.config.Models))
-	for modelName := range s.config.Models {
-		models = append(models, openai.NewModel(modelName, "openmodel"))
-	}
-
-	encodeJSON(w, openai.ModelList{
-		Object: "list",
-		Data:   models,
-	})
-}
-
-// handleV1Model handles GET and DELETE /v1/models/{model}
-func (s *Server) handleV1Model(w http.ResponseWriter, r *http.Request) {
-	prefix := "/v1/models/"
-	if !strings.HasPrefix(r.URL.Path, prefix) {
-		handleError(w, "invalid path", http.StatusBadRequest)
-		return
-	}
-	modelName := r.URL.Path[len(prefix):]
-	if modelName == "" {
-		handleError(w, "model name required", http.StatusBadRequest)
-		return
-	}
-
-	// Check if model exists
-	if err := s.validateModel(modelName); err != nil {
-		handleError(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	switch r.Method {
-	case http.MethodGet:
-		encodeJSON(w, openai.NewModel(modelName, "openmodel"))
-	case http.MethodDelete:
-		// DELETE /v1/models/{model} - for fine-tuned model deletion
-		// For proxy, return success (model deletion is proxy-level operation)
-		w.WriteHeader(http.StatusOK)
-		encodeJSON(w, map[string]interface{}{
-			"id":      modelName,
-			"object":  "model",
-			"deleted": true,
-		})
-	default:
-		handleError(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// extractForwardHeaders extracts headers that should be forwarded to providers.
-// This includes Authorization and X-Request-ID for tracing.
-func extractForwardHeaders(r *http.Request) map[string]string {
-	headers := make(map[string]string)
-	if auth := r.Header.Get("Authorization"); auth != "" {
-		headers["Authorization"] = auth
-	}
-	if requestID := r.Header.Get("X-Request-ID"); requestID != "" {
-		headers["X-Request-ID"] = requestID
-	}
-	return headers
-}
-
-// handleV1ChatCompletions handles GET and POST /v1/chat/completions
-func (s *Server) handleV1ChatCompletions(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleV1ChatCompletionsList(w, r)
-		return
-	case http.MethodPost:
-		// Read raw request body
-		limitRequestBody(w, r, 50*1024*1024)
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			handleError(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// Validate request
-		if err := openai.ValidateChatCompletionRequest(body); err != nil {
-			handleError(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// Extract model from request for routing
-		model := extractModelFromRequestBody(body)
-		if model == "" {
-			handleError(w, "model is required", http.StatusBadRequest)
-			return
-		}
-
-		// Check if model exists in config
-		if err := s.validateModel(model); err != nil {
-			handleError(w, err.Error(), http.StatusNotFound)
-			return
-		}
-
-		// Extract headers to forward
-		forwardHeaders := extractForwardHeaders(r)
-
-		// Check if streaming request
-		isStreaming := false
-		var reqMap map[string]any
-		if err := json.Unmarshal(body, &reqMap); err == nil {
-			if stream, ok := reqMap["stream"].(bool); ok {
-				isStreaming = stream
-			}
-		}
-
-		if isStreaming {
-			// For streaming, use streamWithFailover for automatic retry
-			err := s.streamWithFailover(w, r, model, "",
-				func(ctx context.Context, prov provider.Provider, providerModel string) (<-chan []byte, error) {
-					// Replace model name in body with provider model
-					provBody := replaceModelInBody(body, providerModel)
-					return prov.DoStreamRequest(ctx, "/v1/chat/completions", provBody, forwardHeaders)
-				},
-				func(w http.ResponseWriter, r *http.Request, stream <-chan []byte, providerKey string) error {
-					return writeRawStream(w, r, stream, providerKey)
-				},
-			)
-			if err != nil {
-				s.handleAllProvidersFailed(w, err)
-			}
-			return
-		}
-
-		// Non-streaming: forward request
-		resp, providerKey, err := s.executeWithFailover(r, model, "",
-			func(ctx context.Context, prov provider.Provider, providerModel string) (any, error) {
-				// Replace model name in body with provider model
-				provBody := replaceModelInBody(body, providerModel)
-				return prov.DoRequest(ctx, "/v1/chat/completions", provBody, forwardHeaders)
-			},
-		)
-		if err != nil {
-			s.handleAllProvidersFailed(w, err)
-			return
-		}
-
-		// Return response as-is (already JSON bytes)
-		s.handleProviderSuccessRaw(w, providerKey, resp.([]byte))
-		return
-	default:
-		handleError(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-// handleV1ChatCompletionsList handles GET /v1/chat/completions
-// Returns an empty list for proxy since we don't store completions
-func (s *Server) handleV1ChatCompletionsList(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	encodeJSON(w, map[string]interface{}{
-		"object": "list",
-		"data":   []interface{}{},
-	})
-}
-
-// handleV1Completions handles POST /v1/completions
-func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-
+// handleV1ChatCompletions handles POST /v1/chat/completions
+func (s *Server) handleV1ChatCompletions(c *fiber.Ctx) error {
 	// Read raw request body
-	limitRequestBody(w, r, 50*1024*1024)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		handleError(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
+	body := c.Body()
 
 	// Validate request
-	if err := openai.ValidateCompletionRequest(body); err != nil {
-		handleError(w, err.Error(), http.StatusBadRequest)
-		return
+	if err := openai.ValidateChatCompletionRequest(body); err != nil {
+		return handleError(c, err.Error(), fiber.StatusBadRequest)
 	}
 
 	// Extract model from request for routing
 	model := extractModelFromRequestBody(body)
 	if model == "" {
-		handleError(w, "model is required", http.StatusBadRequest)
-		return
+		return handleError(c, "model is required", fiber.StatusBadRequest)
 	}
 
 	// Check if model exists in config
 	if err := s.validateModel(model); err != nil {
-		handleError(w, err.Error(), http.StatusNotFound)
-		return
+		return handleError(c, err.Error(), fiber.StatusNotFound)
 	}
 
+	// Set original URL in context for tracing
+	ctx := context.WithValue(c.UserContext(), "original_url", c.OriginalURL())
+	ctx = context.WithValue(ctx, "request_id", c.Locals("request_id"))
+
 	// Extract headers to forward
-	forwardHeaders := extractForwardHeaders(r)
+	forwardHeaders := extractForwardHeaders(c)
 
 	// Check if streaming request
 	isStreaming := false
@@ -299,134 +63,407 @@ func (s *Server) handleV1Completions(w http.ResponseWriter, r *http.Request) {
 
 	if isStreaming {
 		// For streaming, use streamWithFailover for automatic retry
-		err := s.streamWithFailover(w, r, model, "",
-			func(ctx context.Context, prov provider.Provider, providerModel string) (<-chan []byte, error) {
-				// Replace model name in body with provider model
-				provBody := replaceModelInBody(body, providerModel)
-				return prov.DoStreamRequest(ctx, "/v1/completions", provBody, forwardHeaders)
-			},
-			func(w http.ResponseWriter, r *http.Request, stream <-chan []byte, providerKey string) error {
-				return writeRawStream(w, r, stream, providerKey)
-			},
-		)
-		if err != nil {
-			s.handleAllProvidersFailed(w, err)
-		}
-		return
+		return s.streamWithFailoverFiber(c, model, body, forwardHeaders, ctx)
 	}
 
 	// Non-streaming: forward request
-	resp, providerKey, err := s.executeWithFailover(r, model, "",
-		func(ctx context.Context, prov provider.Provider, providerModel string) (any, error) {
-			// Replace model name in body with provider model
-			provBody := replaceModelInBody(body, providerModel)
-			return prov.DoRequest(ctx, "/v1/completions", provBody, forwardHeaders)
-		},
-	)
+	resp, providerKey, err := s.executeWithFailoverFiber(ctx, model, body, forwardHeaders, "/v1/chat/completions")
 	if err != nil {
-		s.handleAllProvidersFailed(w, err)
-		return
+		s.handleAllProvidersFailedFiber(c, err)
+		return nil
 	}
 
 	// Return response as-is (already JSON bytes)
-	s.handleProviderSuccessRaw(w, providerKey, resp.([]byte))
+	s.state.ResetModel(providerKey)
+	c.Set("Content-Type", "application/json")
+	return c.Send(resp.([]byte))
 }
 
-// handleV1Embeddings handles POST /v1/embeddings
-func (s *Server) handleV1Embeddings(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPost) {
-		return
+// handleV1Messages handles POST /v1/messages (Claude API)
+func (s *Server) handleV1Messages(c *fiber.Ctx) error {
+	// Validate required headers (anthropic-version is required)
+	anthropicVersion := c.Get("anthropic-version")
+	if anthropicVersion == "" {
+		return handleError(c, "anthropic-version header is required", fiber.StatusBadRequest)
 	}
 
-	// Read raw request body
-	limitRequestBody(w, r, 50*1024*1024)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		handleError(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
-		return
-	}
+	// Read request body
+	body := c.Body()
 
-	// Validate request
-	if err := openai.ValidateEmbeddingRequest(body); err != nil {
-		handleError(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Extract model from request for routing
+	// Extract model name from request body
 	model := extractModelFromRequestBody(body)
 	if model == "" {
-		handleError(w, "model is required", http.StatusBadRequest)
-		return
+		return handleError(c, "model is required", fiber.StatusBadRequest)
 	}
 
 	// Check if model exists in config
 	if err := s.validateModel(model); err != nil {
-		handleError(w, err.Error(), http.StatusNotFound)
-		return
+		c.Set("Content-Type", "application/json")
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"type": "error",
+			"error": fiber.Map{
+				"type":    "invalid_request_error",
+				"message": "model not found",
+			},
+		})
 	}
 
-	// Extract headers to forward
-	forwardHeaders := extractForwardHeaders(r)
+	// Set original URL in context for tracing
+	ctx := context.WithValue(c.UserContext(), "original_url", c.OriginalURL())
+	ctx = context.WithValue(ctx, "request_id", c.Locals("request_id"))
 
-	// Forward request (embeddings never stream)
-	resp, providerKey, err := s.executeWithFailover(r, model, "",
-		func(ctx context.Context, prov provider.Provider, providerModel string) (any, error) {
-			// Replace model name in body with provider model
-			provBody := replaceModelInBody(body, providerModel)
-			return prov.DoRequest(ctx, "/v1/embeddings", provBody, forwardHeaders)
-		},
-	)
-	if err != nil {
-		s.handleAllProvidersFailed(w, err)
-		return
-	}
-
-	// Return response as-is (already JSON bytes)
-	s.handleProviderSuccessRaw(w, providerKey, resp.([]byte))
-}
-
-// convertInputToSlice converts embedding input to string slice
-func convertInputToSlice(input any) []string {
-	switch v := input.(type) {
-	case string:
-		return []string{v}
-	case []any:
-		result := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok {
-				result = append(result, s)
-			}
+	// Check if streaming is requested
+	var isStreaming bool
+	var reqMap map[string]any
+	if err := json.Unmarshal(body, &reqMap); err == nil {
+		if stream, ok := reqMap["stream"].(bool); ok {
+			isStreaming = stream
 		}
-		return result
-	default:
+	}
+
+	// Build headers for Claude API
+	forwardHeaders := map[string]string{
+		"anthropic-version": anthropicVersion,
+	}
+	// Add optional headers
+	if requestID, ok := c.Locals("request_id").(string); ok && requestID != "" {
+		forwardHeaders["X-Request-ID"] = requestID
+	}
+
+	if isStreaming {
+		return s.streamWithFailoverFiberClaude(c, model, body, forwardHeaders, ctx)
+	}
+
+	// Non-streaming request
+	resp, providerKey, err := s.executeWithFailoverFiber(ctx, model, body, forwardHeaders, "/v1/messages")
+	if err != nil {
+		s.handleAllProvidersFailedFiber(c, err)
 		return nil
 	}
+
+	// Response is already in Claude format, return as-is
+	s.state.ResetModel(providerKey)
+	c.Set("Content-Type", "application/json")
+	return c.Send(resp.([]byte))
 }
 
-// handleAllProvidersFailed handles when all providers have failed
-func (s *Server) handleAllProvidersFailed(w http.ResponseWriter, lastErr error) {
-	// Log ERROR when all providers have failed
+// extractForwardHeaders extracts headers that should be forwarded to providers
+func extractForwardHeaders(c *fiber.Ctx) map[string]string {
+	headers := make(map[string]string)
+
+	// Forward Authorization header
+	if auth := c.Get("Authorization"); auth != "" {
+		headers["Authorization"] = auth
+	}
+
+	// Forward X-Request-ID header
+	if requestID := c.Get("X-Request-ID"); requestID != "" {
+		headers["X-Request-ID"] = requestID
+	}
+
+	return headers
+}
+
+// extractModelFromRequestBody extracts model from raw JSON body
+func extractModelFromRequestBody(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var req struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &req); err == nil {
+		return req.Model
+	}
+	return ""
+}
+
+// replaceModelInBody replaces the model field in a JSON request body
+func replaceModelInBody(body []byte, newModel string) []byte {
+	if len(body) == 0 || newModel == "" {
+		return body
+	}
+
+	// Parse as generic map to preserve all fields
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return body
+	}
+
+	// Replace model field
+	req["model"] = newModel
+
+	// Re-encode
+	result, err := json.Marshal(req)
+	if err != nil {
+		return body
+	}
+	return result
+}
+
+// validateModel checks if a model exists in the configuration
+func (s *Server) validateModel(model string) error {
+	if _, exists := s.config.Models[model]; !exists {
+		return fmt.Errorf("model %q not found", model)
+	}
+	return nil
+}
+
+// handleAllProvidersFailedFiber handles when all providers have failed
+func (s *Server) handleAllProvidersFailedFiber(c *fiber.Ctx, lastErr error) {
 	errMsg := "all providers failed"
 	if lastErr != nil {
 		errMsg = lastErr.Error()
 	}
-	logger.Error("All providers failed", "error", errMsg)
+	requestID, _ := c.Locals("request_id").(string)
+	applogger.Error("all_providers_failed", "request_id", requestID, "error", errMsg)
 
 	timeout := s.state.GetProgressiveTimeout()
 	s.state.IncrementTimeout(s.config.Thresholds.MaxTimeout)
 
-	w.Header().Set("Retry-After", fmt.Sprintf("%d", timeout/1000))
-	w.WriteHeader(http.StatusServiceUnavailable)
-
-	encodeJSON(w, map[string]string{"error": errMsg})
+	c.Set("Retry-After", fmt.Sprintf("%d", timeout/1000))
+	handleError(c, errMsg, fiber.StatusServiceUnavailable)
 }
 
-// handleProviderSuccessRaw handles a successful raw response from a provider.
-// It writes the raw bytes as-is to the response writer.
-func (s *Server) handleProviderSuccessRaw(w http.ResponseWriter, providerKey string, response []byte) {
-	s.state.ResetModel(providerKey)
-	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(response); err != nil {
-		logger.Error("Failed to write response", "error", err)
+// executeWithFailoverFiber handles non-streaming requests with failover
+func (s *Server) executeWithFailoverFiber(ctx context.Context, model string, body []byte, headers map[string]string, endpoint string) (any, string, error) {
+	var triedProviders []string
+
+	for {
+		prov, providerKey, providerModel, err := s.findProviderWithFailover(model, "")
+		if err != nil {
+			requestID, _ := ctx.Value("request_id").(string)
+			applogger.Error("all_providers_failed",
+				"request_id", requestID,
+				"model", model,
+				"providers_tried", triedProviders,
+				"error", err.Error())
+			return nil, "", fmt.Errorf("model %q temporarily unavailable: all providers failed", model)
+		}
+
+		triedProviders = append(triedProviders, providerKey)
+		threshold := s.config.GetThresholds(providerKey).FailuresBeforeSwitch
+
+		// Log request processing
+		requestID, _ := ctx.Value("request_id").(string)
+		applogger.Info("PROCESSING", "request_id", requestID, "provider", providerKey, "model", model)
+
+		// Replace model name in body
+		provBody := replaceModelInBody(body, providerModel)
+
+		resp, err := prov.DoRequest(ctx, endpoint, provBody, headers)
+		if err != nil {
+			s.handleProviderError(providerKey, err, threshold)
+			continue
+		}
+
+		return resp, providerKey, nil
 	}
+}
+
+// streamWithFailoverFiber handles streaming requests with failover for OpenAI format
+func (s *Server) streamWithFailoverFiber(c *fiber.Ctx, model string, body []byte, headers map[string]string, ctx context.Context) error {
+	var triedProviders []string
+	requestID, _ := c.Locals("request_id").(string)
+
+	for {
+		prov, providerKey, providerModel, err := s.findProviderWithFailover(model, "")
+		if err != nil {
+			applogger.Error("all_providers_failed",
+				"request_id", requestID,
+				"model", model,
+				"providers_tried", triedProviders,
+				"error", err.Error())
+			s.handleAllProvidersFailedFiber(c, fmt.Errorf("model %q temporarily unavailable: all providers failed", model))
+			return nil
+		}
+
+		triedProviders = append(triedProviders, providerKey)
+		threshold := s.config.GetThresholds(providerKey).FailuresBeforeSwitch
+
+		// Log request processing
+		applogger.Info("PROCESSING", "request_id", requestID, "provider", providerKey, "model", model)
+
+		// Store provider in context for logging
+		c.Locals("provider", providerKey)
+		c.Locals("model", model)
+
+		// Replace model name in body
+		provBody := replaceModelInBody(body, providerModel)
+
+		// Set streaming headers
+		c.Set("Content-Type", "text/event-stream")
+		c.Set("Cache-Control", "no-cache")
+		c.Set("Connection", "keep-alive")
+		c.Set("X-Accel-Buffering", "no")
+		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+			defer w.Flush()
+
+			stream, err := prov.DoStreamRequest(ctx, "/v1/chat/completions", provBody, headers)
+			if err != nil {
+				applogger.Warn("provider_stream_failed",
+					"request_id", requestID,
+					"provider", providerKey,
+					"error", err.Error())
+				s.state.RecordFailure(providerKey, threshold)
+				return
+			}
+
+			for line := range stream {
+				if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
+					applogger.Info("client_disconnected", "request_id", requestID, "provider", providerKey)
+					return
+				}
+				w.Flush()
+			}
+
+			// Write [DONE] marker
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			w.Flush()
+
+			s.state.ResetModel(providerKey)
+		})
+		return nil
+	}
+}
+
+// streamWithFailoverFiberClaude handles streaming requests for Claude format
+func (s *Server) streamWithFailoverFiberClaude(c *fiber.Ctx, model string, body []byte, headers map[string]string, ctx context.Context) error {
+	var triedProviders []string
+	requestID, _ := c.Locals("request_id").(string)
+
+	for {
+		prov, providerKey, providerModel, err := s.findProviderWithFailover(model, "")
+		if err != nil {
+			applogger.Error("all_providers_failed",
+				"request_id", requestID,
+				"model", model,
+				"providers_tried", triedProviders,
+				"error", err.Error())
+			s.handleAllProvidersFailedFiber(c, fmt.Errorf("model %q temporarily unavailable: all providers failed", model))
+			return nil
+		}
+
+		triedProviders = append(triedProviders, providerKey)
+		threshold := s.config.GetThresholds(providerKey).FailuresBeforeSwitch
+
+		// Log request processing
+		applogger.Info("PROCESSING", "request_id", requestID, "provider", providerKey, "model", model)
+
+		// Store provider in context for logging
+		c.Locals("provider", providerKey)
+		c.Locals("model", model)
+
+		// Replace model name in body
+		provBody := replaceModelInBody(body, providerModel)
+
+		// Set streaming headers
+		c.Set("Content-Type", "text/event-stream")
+		c.Set("Cache-Control", "no-cache")
+		c.Set("Connection", "keep-alive")
+		c.Set("X-Accel-Buffering", "no")
+		c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+			defer w.Flush()
+
+			stream, err := prov.DoStreamRequest(ctx, "/v1/messages", provBody, headers)
+			if err != nil {
+				applogger.Warn("provider_stream_failed",
+					"request_id", requestID,
+					"provider", providerKey,
+					"error", err.Error())
+				s.state.RecordFailure(providerKey, threshold)
+				return
+			}
+
+			for line := range stream {
+				// Claude SSE format - write line as-is
+				if _, err := fmt.Fprintf(w, "%s\n", line); err != nil {
+					applogger.Info("client_disconnected", "request_id", requestID, "provider", providerKey)
+					return
+				}
+				w.Flush()
+			}
+
+			s.state.ResetModel(providerKey)
+		})
+		return nil
+	}
+}
+
+// handleProviderError handles a provider error by recording failure
+func (s *Server) handleProviderError(providerKey string, err error, threshold int) {
+	applogger.Warn("provider_failed", "provider", providerKey, "error", err.Error())
+	s.state.RecordFailure(providerKey, threshold)
+}
+
+// findProviderWithFailover finds an available provider for a model
+func (s *Server) findProviderWithFailover(model string, providerName string) (provider.Provider, string, string, error) {
+	modelConfig, exists := s.config.Models[model]
+	if !exists {
+		return nil, "", "", fmt.Errorf("model %q not found", model)
+	}
+
+	providers := modelConfig.Providers
+	strategy := modelConfig.Strategy
+	if strategy == "" {
+		strategy = config.StrategyFallback
+	}
+
+	threshold := s.config.GetThresholds(providerName).FailuresBeforeSwitch
+
+	// Find all available providers
+	available := s.findAvailableProvidersForModel(providers, threshold)
+	if len(available) == 0 {
+		return nil, "", "", fmt.Errorf("no available providers for model %q", model)
+	}
+
+	// Select based on strategy
+	switch strategy {
+	case config.StrategyRoundRobin:
+		idx := s.state.NextRoundRobin(model, len(available))
+		p := available[idx]
+		return p.provider, p.providerKey, p.providerModel, nil
+
+	case config.StrategyRandom:
+		idx := s.state.GetRandomIndex(len(available))
+		p := available[idx]
+		return p.provider, p.providerKey, p.providerModel, nil
+
+	case config.StrategyFallback:
+		fallthrough
+	default:
+		p := available[0]
+		return p.provider, p.providerKey, p.providerModel, nil
+	}
+}
+
+// providerResult holds a provider with its metadata
+type providerResult struct {
+	provider      provider.Provider
+	providerKey   string
+	providerModel string
+}
+
+// findAvailableProvidersForModel returns available providers for a model
+func (s *Server) findAvailableProvidersForModel(providers []config.ModelProvider, threshold int) []providerResult {
+	var results []providerResult
+	for _, p := range providers {
+		providerKey := formatProviderKey(p)
+
+		if !s.state.IsAvailable(providerKey, threshold) {
+			continue
+		}
+
+		prov, exists := s.providers[p.Provider]
+		if !exists {
+			continue
+		}
+
+		results = append(results, providerResult{
+			provider:      prov,
+			providerKey:   providerKey,
+			providerModel: p.Model,
+		})
+	}
+	return results
 }

@@ -16,8 +16,9 @@ import (
 )
 
 var (
-	logger *slog.Logger
-	mu     sync.RWMutex
+	logger     *slog.Logger
+	mu         sync.RWMutex
+	level      slog.Level
 )
 
 // Level represents the logging level.
@@ -162,14 +163,16 @@ func getWriter() io.Writer {
 // Init initializes the logger with the given level and format.
 // Level can be: trace, debug, info, warn, error
 // Format can be: text, color, json
-func Init(level string, format string) error {
+func Init(levelStr string, format string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	lvl, err := parseLevel(level)
+	lvl, err := parseLevel(levelStr)
 	if err != nil {
 		return err
 	}
+
+	level = lvl
 
 	logFormat := parseFormat(format)
 
@@ -201,6 +204,13 @@ func Get() *slog.Logger {
 		return slog.Default()
 	}
 	return logger
+}
+
+// IsTraceEnabled returns true if trace level logging is enabled.
+func IsTraceEnabled() bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	return level <= slogLevelTrace
 }
 
 // Trace logs a message at trace level.

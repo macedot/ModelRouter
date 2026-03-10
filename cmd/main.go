@@ -220,7 +220,7 @@ func runServer(configPath *string) {
 	providers := initProviders(cfg)
 
 	stateMgr := state.New(10000) // 10 second initial timeout
-	srv := server.New(cfg, providers, stateMgr)
+	srv := server.New(cfg, providers, stateMgr, Version)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
