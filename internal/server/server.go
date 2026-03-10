@@ -53,9 +53,20 @@ func New(cfg *config.Config, providers map[string]provider.Provider, stateMgr *s
 	return srv
 }
 
-// generateRequestID generates a short random request ID
+// generateRequestID generates a short random request ID (alphanumeric only)
 func generateRequestID() string {
-	return string(nanoid.MustWithLength(10))
+	generator, err := nanoid.NewGenerator(
+		nanoid.WithAlphabet("abcdefghijklmnopqrstuvwxyz0123456789"),
+		nanoid.WithLengthHint(10),
+	)
+	if err != nil {
+		return ""
+	}
+	id, err := generator.New()
+	if err != nil {
+		return ""
+	}
+	return string(id)
 }
 
 // Start starts the Fiber server
