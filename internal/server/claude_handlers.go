@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -91,27 +92,65 @@ func (s *Server) handleV1Messages(w http.ResponseWriter, r *http.Request) {
 
 // handleV1MessagesStream handles streaming POST /v1/messages
 func (s *Server) handleV1MessagesStream(w http.ResponseWriter, r *http.Request, req *claude.Request) {
-	// Find provider
-	prov, providerKey, providerModel, err := s.findProviderWithFailover(req.Model, "")
-	if err != nil {
-		s.handleAllProvidersFailed(w, err)
-		return
-	}
-
-	threshold := s.config.GetThresholds(providerKey).FailuresBeforeSwitch
-	*r = *r.WithContext(setProviderContext(r.Context(), providerKey, req.Model))
-
 	// Convert to OpenAI request with streaming enabled
 	openaiReq := claude.ToOpenAIRequestWithStream(req)
 
-	stream, err := prov.StreamChat(r.Context(), providerModel, openaiReq.Messages, openaiReq)
-	if err != nil {
-		logger.Error("StreamChat failed", "provider", providerKey, "error", err)
-		s.state.RecordFailure(providerKey, threshold)
-		handleError(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	var triedProviders []string
 
+	for {
+		// Find available provider
+		prov, providerKey, providerModel, err := s.findProviderWithFailover(req.Model, "")
+		if err != nil {
+			// All providers exhausted - log ERROR and return
+			logger.Error("All providers failed for Claude streaming request",
+				"model", req.Model,
+				"providers_tried", triedProviders,
+				"error", err)
+			s.handleAllProvidersFailed(w, err)
+			return
+		}
+
+		// Track which providers we've tried
+		triedProviders = append(triedProviders, providerKey)
+
+		// Get threshold for this provider
+		threshold := s.config.GetThresholds(providerKey).FailuresBeforeSwitch
+
+		// Set provider/model in context for logging
+		*r = *r.WithContext(setProviderContext(r.Context(), providerKey, req.Model))
+
+		// Try to establish stream
+		stream, err := prov.StreamChat(r.Context(), providerModel, openaiReq.Messages, openaiReq)
+		if err != nil {
+			// Connection failed - log WARN and try next provider
+			logger.Warn("Provider stream connection failed, trying next provider",
+				"provider", providerKey,
+				"error", err)
+			s.state.RecordFailure(providerKey, threshold)
+			continue
+		}
+
+		// Stream established successfully - process it
+		streamErr := s.writeClaudeStream(w, r, stream, providerKey, req.Model, threshold)
+		if streamErr == nil {
+			// Stream completed successfully
+			s.state.ResetModel(providerKey)
+			return
+		}
+
+		// Stream failed mid-stream - drain remaining messages and try next provider
+		drainStreamTyped(stream)
+		logger.Warn("Provider stream failed mid-stream, trying next provider",
+			"provider", providerKey,
+			"error", streamErr)
+		s.state.RecordFailure(providerKey, threshold)
+		// Continue to next provider
+	}
+}
+
+// writeClaudeStream writes a Claude-compatible SSE stream from an OpenAI chat stream.
+// Returns error if stream fails mid-way.
+func (s *Server) writeClaudeStream(w http.ResponseWriter, r *http.Request, stream <-chan openai.ChatCompletionResponse, providerKey, model string, threshold int) error {
 	completionID := "msg_" + uuid.New().String()[:8]
 
 	// Set up SSE headers for Claude streaming
@@ -119,12 +158,15 @@ func (s *Server) handleV1MessagesStream(w http.ResponseWriter, r *http.Request, 
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
 
-	flusher, _ := w.(http.Flusher)
-	if flusher == nil {
-		handleError(w, "streaming not supported", http.StatusInternalServerError)
-		return
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return fmt.Errorf("streaming not supported")
 	}
+
+	// Flush headers
+	flusher.Flush()
 
 	// Write message_start event
 	messageStart := &claude.StreamEvent{
@@ -133,30 +175,32 @@ func (s *Server) handleV1MessagesStream(w http.ResponseWriter, r *http.Request, 
 			ID:      completionID,
 			Type:    "message",
 			Role:    "assistant",
-			Model:   req.Model,
+			Model:   model,
 			Content: []claude.ContentBlock{},
 			Usage:   claude.Usage{},
 		},
 	}
-	writeClaudeStreamEvent(w, flusher, messageStart)
-
-	// Stream content blocks
-	contentIndex := 0
+	if err := writeClaudeStreamEvent(w, flusher, messageStart); err != nil {
+		return err
+	}
 
 	// Write content_block_start
 	contentBlockStart := &claude.StreamEvent{
 		Type:         "content_block_start",
-		Index:        contentIndex,
+		Index:        0,
 		ContentBlock: &claude.ContentBlock{Type: "text"},
 	}
-	writeClaudeStreamEvent(w, flusher, contentBlockStart)
+	if err := writeClaudeStreamEvent(w, flusher, contentBlockStart); err != nil {
+		return err
+	}
 
+	// Stream content blocks
+	contentIndex := 0
 	for resp := range stream {
 		// Check if client disconnected
 		if checkClientDisconnect(r) {
 			logger.Info("Client disconnected, closing stream", "provider", providerKey)
-			s.state.RecordFailure(providerKey, threshold)
-			return
+			return fmt.Errorf("client disconnected")
 		}
 
 		for _, choice := range resp.Choices {
@@ -173,7 +217,9 @@ func (s *Server) handleV1MessagesStream(w http.ResponseWriter, r *http.Request, 
 					Text: choice.Delta.Content,
 				},
 			}
-			writeClaudeStreamEvent(w, flusher, event)
+			if err := writeClaudeStreamEvent(w, flusher, event); err != nil {
+				return err
+			}
 
 			// Check for finish
 			if choice.FinishReason != "" && choice.FinishReason != "null" {
@@ -182,7 +228,9 @@ func (s *Server) handleV1MessagesStream(w http.ResponseWriter, r *http.Request, 
 					Type:  "content_block_stop",
 					Index: contentIndex,
 				}
-				writeClaudeStreamEvent(w, flusher, contentBlockStop)
+				if err := writeClaudeStreamEvent(w, flusher, contentBlockStop); err != nil {
+					return err
+				}
 
 				// Write message_delta
 				stopReason := "end_turn"
@@ -199,7 +247,9 @@ func (s *Server) handleV1MessagesStream(w http.ResponseWriter, r *http.Request, 
 						},
 					},
 				}
-				writeClaudeStreamEvent(w, flusher, messageDelta)
+				if err := writeClaudeStreamEvent(w, flusher, messageDelta); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -208,32 +258,34 @@ func (s *Server) handleV1MessagesStream(w http.ResponseWriter, r *http.Request, 
 	messageStop := &claude.StreamEvent{
 		Type: "message_stop",
 	}
-	writeClaudeStreamEvent(w, flusher, messageStop)
+	if err := writeClaudeStreamEvent(w, flusher, messageStop); err != nil {
+		return err
+	}
 
-	// Success - reset model state on successful stream completion
-	s.state.ResetModel(providerKey)
+	return nil
 }
 
 // writeClaudeStreamEvent writes a Claude streaming event in SSE format
-func writeClaudeStreamEvent(w http.ResponseWriter, flusher http.Flusher, event *claude.StreamEvent) {
+// Returns error if write fails
+func writeClaudeStreamEvent(w http.ResponseWriter, flusher http.Flusher, event *claude.StreamEvent) error {
 	data, err := json.Marshal(event)
 	if err != nil {
-		logger.Error("Failed to marshal stream event", "error", err)
-		return
+		return fmt.Errorf("failed to marshal stream event: %w", err)
 	}
 
 	if _, err := w.Write([]byte("data: ")); err != nil {
-		return
+		return fmt.Errorf("failed to write SSE prefix: %w", err)
 	}
 	if _, err := w.Write(data); err != nil {
-		return
+		return fmt.Errorf("failed to write SSE data: %w", err)
 	}
 	if _, err := w.Write([]byte("\n\n")); err != nil {
-		return
+		return fmt.Errorf("failed to write SSE suffix: %w", err)
 	}
 	if flusher != nil {
 		flusher.Flush()
 	}
+	return nil
 }
 
 // requireClaudeHeaders checks for required Claude API headers
