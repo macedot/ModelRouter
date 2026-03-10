@@ -246,7 +246,7 @@ func (s *Server) executeWithFailoverFiber(ctx context.Context, model string, bod
 
 		// Log request processing
 		requestID, _ := ctx.Value("request_id").(string)
-		applogger.Info("PROCESSING", "request_id", requestID, "provider", providerKey, "model", model)
+		applogger.Debug("PROCESSING", "request_id", requestID, "provider", providerKey, "model", model)
 
 		// Replace model name in body
 		provBody := replaceModelInBody(body, providerModel)
@@ -282,7 +282,7 @@ func (s *Server) streamWithFailoverFiber(c *fiber.Ctx, model string, body []byte
 		threshold := s.config.GetThresholds(providerKey).FailuresBeforeSwitch
 
 		// Log request processing
-		applogger.Info("PROCESSING", "request_id", requestID, "provider", providerKey, "model", model)
+		applogger.Debug("PROCESSING", "request_id", requestID, "provider", providerKey, "model", model)
 
 		// Store provider in context for logging
 		c.Locals("provider", providerKey)
@@ -348,7 +348,7 @@ func (s *Server) streamWithFailoverFiberClaude(c *fiber.Ctx, model string, body 
 		threshold := s.config.GetThresholds(providerKey).FailuresBeforeSwitch
 
 		// Log request processing
-		applogger.Info("PROCESSING", "request_id", requestID, "provider", providerKey, "model", model)
+		applogger.Debug("PROCESSING", "request_id", requestID, "provider", providerKey, "model", model)
 
 		// Store provider in context for logging
 		c.Locals("provider", providerKey)
