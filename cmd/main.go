@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -306,6 +307,9 @@ func runModels(jsonOutput *bool) {
 		}
 	}
 
+	// Sort model names for deterministic ordering
+	sort.Strings(modelOrder)
+
 	// Build ordered list with default marker
 	models := make([]modelInfo, 0, len(modelOrder))
 	hasExplicitDefault := false
@@ -323,7 +327,7 @@ func runModels(jsonOutput *bool) {
 		models = append(models, info)
 	}
 
-	// If no explicit default is set, use the first model
+	// If no explicit default is set, use the first model (alphabetically)
 	if !hasExplicitDefault && len(models) > 0 {
 		models[0].Default = true
 	}
