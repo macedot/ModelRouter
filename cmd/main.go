@@ -569,7 +569,7 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 				Model:    modelName,
 				Strategy: modelConfig.Strategy,
 				ApiMode:  modelConfig.ApiMode,
-				Prompt:   truncate(strings.TrimSpace(messages[0].Content), 100),
+				Prompt:   strings.TrimSpace(messages[0].Content),
 				Error:    err.Error(),
 				Duration: time.Since(startTime).String(),
 				Stream:   stream,
@@ -615,7 +615,7 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 					ApiMode:    modelConfig.ApiMode,
 					URL:        baseURL,
 					Endpoint:   endpoint,
-					Prompt:     truncate(strings.TrimSpace(messages[0].Content), 100),
+					Prompt:     strings.TrimSpace(messages[0].Content),
 					Error:      benchErr.Error(),
 					Duration:   duration.String(),
 					Stream:     stream,
@@ -633,7 +633,7 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 				ApiMode:    modelConfig.ApiMode,
 				URL:        baseURL,
 				Endpoint:   endpoint,
-				Prompt:     truncate(strings.TrimSpace(messages[0].Content), 100),
+				Prompt:     strings.TrimSpace(messages[0].Content),
 				Response:   resp.Content,
 				Duration:   duration.String(),
 				Stream:     stream,
@@ -902,7 +902,7 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 					Model:    modelName,
 					URL:      baseURL,
 					Endpoint: endpoints.V1ChatCompletions,
-					Prompt:   truncate(strings.TrimSpace(messages[0].Content), 100),
+					Prompt:   strings.TrimSpace(messages[0].Content),
 					Error:    err.Error(),
 					Duration: duration.String(),
 					Stream:   stream,
@@ -917,7 +917,7 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 				Model:    modelName,
 				URL:      baseURL,
 				Endpoint: endpoints.V1ChatCompletions,
-				Prompt:   truncate(strings.TrimSpace(messages[0].Content), 100),
+				Prompt:   strings.TrimSpace(messages[0].Content),
 				Response: resp.Content,
 				Duration: duration.String(),
 				Stream:   stream,
@@ -937,14 +937,6 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 			writeBenchResult(result)
 		}
 	}
-}
-
-// truncate truncates a string to maxLen characters
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
 }
 
 // formatProviders formats a slice of ModelProvider for display

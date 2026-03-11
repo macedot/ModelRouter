@@ -705,61 +705,6 @@ func TestPrintBenchUsage(t *testing.T) {
 	}
 }
 
-func TestTruncate(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		maxLen   int
-		expected string
-	}{
-		{
-			name:     "short string unchanged",
-			input:    "hello",
-			maxLen:   10,
-			expected: "hello",
-		},
-		{
-			name:     "exact length unchanged",
-			input:    "hello",
-			maxLen:   5,
-			expected: "hello",
-		},
-		{
-			name:     "long string truncated",
-			input:    "hello world this is a long string",
-			maxLen:   10,
-			expected: "hello worl...", // first 10 chars + "..."
-		},
-		{
-			name:     "empty string",
-			input:    "",
-			maxLen:   10,
-			expected: "",
-		},
-		{
-			name:     "single character",
-			input:    "a",
-			maxLen:   5,
-			expected: "a",
-		},
-		{
-			name:     "very short maxLen",
-			input:    "hello world",
-			maxLen:   3,
-			expected: "hel...",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := truncate(tt.input, tt.maxLen)
-			if result != tt.expected {
-				t.Errorf("truncate(%q, %d) = %q, want %q", tt.input, tt.maxLen, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestFormatProviders(t *testing.T) {
 	tests := []struct {
 		name       string
