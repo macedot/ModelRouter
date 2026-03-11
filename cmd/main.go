@@ -55,6 +55,7 @@ func newBenchFlagSet() *flag.FlagSet {
 	fs := flag.NewFlagSet("bench", flag.ExitOnError)
 	fs.String("prompt", "", "Path to file containing the prompt (required)")
 	fs.String("scope", "application", "Scope: application, providers, or all")
+	fs.Bool("stream", false, "Use streaming mode for requests")
 	return fs
 }
 
@@ -150,13 +151,14 @@ func main() {
 
 		promptFile := fs.Lookup("prompt").Value.String()
 		scope := fs.Lookup("scope").Value.String()
+		stream := fs.Lookup("stream").Value.(flag.Getter).Get().(bool)
 
 		if promptFile == "" {
 			fmt.Fprintf(os.Stderr, "Error: -prompt is required\n\n")
 			fs.Usage()
 			os.Exit(1)
 		}
-		runBench(promptFile, scope)
+		runBench(promptFile, scope, stream)
 		return
 	}
 
@@ -582,7 +584,7 @@ func intPtr(i int) *int {
 }
 
 // runBench executes benchmark tests based on scope mode
-func runBench(promptFile, scope string) {
+func runBench(promptFile, scope string, stream bool) {
 	// Load config
 	cfg, err := config.Load()
 	if err != nil {
@@ -610,12 +612,12 @@ func runBench(promptFile, scope string) {
 	// Run benchmarks based on scope
 	switch scope {
 	case "application", "app":
-		runBenchApplication(ctx, cfg, providers, messages)
+		runBenchApplication(ctx, cfg, providers, messages, stream)
 	case "providers":
-		runBenchProviders(ctx, cfg, providers, messages)
+		runBenchProviders(ctx, cfg, providers, messages, stream)
 	case "all":
-		runBenchApplication(ctx, cfg, providers, messages)
-		runBenchProviders(ctx, cfg, providers, messages)
+		runBenchApplication(ctx, cfg, providers, messages, stream)
+		runBenchProviders(ctx, cfg, providers, messages, stream)
 	default:
 		fmt.Fprintf(os.Stderr, "Error: invalid scope '%s'. Use: application, providers, or all\n", scope)
 		os.Exit(1)
@@ -633,6 +635,7 @@ type benchResult struct {
 	Error      string `json:"error,omitempty"`
 	Response   string `json:"response,omitempty"`
 	Duration   string `json:"duration"`
+	Stream     bool   `json:"stream"`
 	Tokens     *benchTokens `json:"tokens,omitempty"`
 	TokensPerSec float64 `json:"tokens_per_sec,omitempty"`
 }
@@ -675,7 +678,7 @@ func sanitizeBenchName(name string) string {
 }
 
 // runBenchApplication tests each configured model alias using its failover chain
-func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[string]provider.Provider, messages []openai.ChatCompletionMessage) {
+func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[string]provider.Provider, messages []openai.ChatCompletionMessage, stream bool) {
 	for _, modelName := range cfg.ModelOrder {
 		modelConfig, exists := cfg.Models[modelName]
 		if !exists {
@@ -696,13 +699,14 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 				Prompt:   truncate(strings.TrimSpace(messages[0].Content), 100),
 				Error:    err.Error(),
 				Duration: time.Since(startTime).String(),
+				Stream:   stream,
 			}
 			writeBenchResult(result)
 			continue
 		}
 
 		// Make the request
-		resp, err := prov.Chat(ctx, providerModel, messages, nil)
+		resp, err := benchChat(ctx, prov, providerModel, messages, stream)
 		duration := time.Since(startTime)
 
 		if err != nil {
@@ -715,6 +719,7 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 				Prompt:     truncate(strings.TrimSpace(messages[0].Content), 100),
 				Error:      err.Error(),
 				Duration:   duration.String(),
+				Stream:     stream,
 			}
 			writeBenchResult(result)
 			continue
@@ -727,23 +732,85 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 			ProviderID: providerKey,
 			Strategy:   modelConfig.Strategy,
 			Prompt:     truncate(strings.TrimSpace(messages[0].Content), 100),
-			Response:   resp.Choices[0].Message.Content,
+			Response:   resp.Content,
 			Duration:   duration.String(),
+			Stream:     stream,
 		}
 
-		if resp.Usage.TotalTokens > 0 {
+		if resp.TotalTokens > 0 {
 			result.Tokens = &benchTokens{
-				Prompt:     resp.Usage.PromptTokens,
-				Completion: resp.Usage.CompletionTokens,
-				Total:      resp.Usage.TotalTokens,
+				Prompt:     resp.PromptTokens,
+				Completion: resp.CompletionTokens,
+				Total:      resp.TotalTokens,
 			}
-			if resp.Usage.PromptTokens > 0 {
-				result.TokensPerSec = float64(resp.Usage.CompletionTokens) / duration.Seconds()
+			if resp.PromptTokens > 0 {
+				result.TokensPerSec = float64(resp.CompletionTokens) / duration.Seconds()
 			}
 		}
 
 		writeBenchResult(result)
 	}
+}
+
+// benchResponse holds the response from a benchmark chat call
+type benchResponse struct {
+	Content          string
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}
+
+// benchChat performs a chat request, using streaming or non-streaming based on the stream flag
+func benchChat(ctx context.Context, prov provider.Provider, model string, messages []openai.ChatCompletionMessage, stream bool) (*benchResponse, error) {
+	if stream {
+		return benchChatStream(ctx, prov, model, messages)
+	}
+	return benchChatNonStream(ctx, prov, model, messages)
+}
+
+// benchChatNonStream performs a non-streaming chat request
+func benchChatNonStream(ctx context.Context, prov provider.Provider, model string, messages []openai.ChatCompletionMessage) (*benchResponse, error) {
+	resp, err := prov.Chat(ctx, model, messages, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &benchResponse{
+		Content:          resp.Choices[0].Message.Content,
+		PromptTokens:     resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens,
+		TotalTokens:      resp.Usage.TotalTokens,
+	}, nil
+}
+
+// benchChatStream performs a streaming chat request
+func benchChatStream(ctx context.Context, prov provider.Provider, model string, messages []openai.ChatCompletionMessage) (*benchResponse, error) {
+	ch, err := prov.StreamChat(ctx, model, messages, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var content strings.Builder
+	var promptTokens, completionTokens, totalTokens int
+
+	for chunk := range ch {
+		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+			content.WriteString(chunk.Choices[0].Delta.Content)
+		}
+		// Accumulate usage from streaming response
+		if chunk.Usage.TotalTokens > 0 {
+			promptTokens = chunk.Usage.PromptTokens
+			completionTokens = chunk.Usage.CompletionTokens
+			totalTokens = chunk.Usage.TotalTokens
+		}
+	}
+
+	return &benchResponse{
+		Content:          content.String(),
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      totalTokens,
+	}, nil
 }
 
 // findFirstAvailableProvider returns the first provider in the chain that is available
@@ -760,7 +827,7 @@ func findFirstAvailableProvider(cfg *config.Config, providers map[string]provide
 }
 
 // runBenchProviders tests every model on every provider individually
-func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[string]provider.Provider, messages []openai.ChatCompletionMessage) {
+func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[string]provider.Provider, messages []openai.ChatCompletionMessage, stream bool) {
 	// Sort provider names for consistent output
 	var providerNames []string
 	for name := range cfg.Providers {
@@ -783,7 +850,7 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 		for _, modelName := range models {
 			startTime := time.Now()
 
-			resp, err := prov.Chat(ctx, modelName, messages, nil)
+			resp, err := benchChat(ctx, prov, modelName, messages, stream)
 			duration := time.Since(startTime)
 
 			if err != nil {
@@ -794,6 +861,7 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 					Prompt:   truncate(strings.TrimSpace(messages[0].Content), 100),
 					Error:    err.Error(),
 					Duration: duration.String(),
+					Stream:   stream,
 				}
 				writeBenchResult(result)
 				continue
@@ -804,18 +872,19 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 				Provider: providerName,
 				Model:    modelName,
 				Prompt:   truncate(strings.TrimSpace(messages[0].Content), 100),
-				Response: resp.Choices[0].Message.Content,
+				Response: resp.Content,
 				Duration: duration.String(),
+				Stream:   stream,
 			}
 
-			if resp.Usage.TotalTokens > 0 {
+			if resp.TotalTokens > 0 {
 				result.Tokens = &benchTokens{
-					Prompt:     resp.Usage.PromptTokens,
-					Completion: resp.Usage.CompletionTokens,
-					Total:      resp.Usage.TotalTokens,
+					Prompt:     resp.PromptTokens,
+					Completion: resp.CompletionTokens,
+					Total:      resp.TotalTokens,
 				}
-				if resp.Usage.PromptTokens > 0 {
-					result.TokensPerSec = float64(resp.Usage.CompletionTokens) / duration.Seconds()
+				if resp.PromptTokens > 0 {
+					result.TokensPerSec = float64(resp.CompletionTokens) / duration.Seconds()
 				}
 			}
 

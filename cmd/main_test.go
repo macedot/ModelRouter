@@ -819,7 +819,7 @@ func TestPrintBenchUsage(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 	os.Args = []string{"openmodel"}
 
-	fs := flag.NewFlagSet("bench", flag.ExitOnError)
+	fs := newBenchFlagSet()
 	printBenchUsage(fs)
 
 	w.Close()
@@ -838,6 +838,9 @@ func TestPrintBenchUsage(t *testing.T) {
 	}
 	if !strings.Contains(output, "-scope") {
 		t.Error("Expected '-scope' in help output")
+	}
+	if !strings.Contains(output, "-stream") {
+		t.Error("Expected '-stream' in help output")
 	}
 	if !strings.Contains(output, "application") {
 		t.Error("Expected 'application' scope mode in help output")
