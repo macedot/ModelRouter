@@ -148,6 +148,76 @@ curl http://localhost:12345/v1/models
 curl http://localhost:12345/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
+## CLI Commands
+
+### `serve` (default)
+
+Start the OpenModel server:
+
+```bash
+./openmodel serve [--config <path>]
+```
+
+### `test`
+
+Test configured providers by sending a simple request:
+
+```bash
+./openmodel test [--model <model-name>]
+```
+
+### `models`
+
+List available models:
+
+```bash
+./openmodel models [--json]
+```
+
+### `config`
+
+Find and validate config file:
+
+```bash
+./openmodel config
+```
+
+### `bench`
+
+Benchmark models by submitting prompts:
+
+```bash
+./openmodel bench --prompt <file> [--scope <mode>]
+```
+
+**Options:**
+- `-prompt <file>` - Path to file containing the prompt (required)
+- `-scope <mode>` - Benchmark scope (default: `application`)
+
+**Scope modes:**
+- `application` - Test each configured model alias (uses failover chains)
+- `providers` - Test every model on every provider individually
+- `all` - Run both application and providers modes
+
+**Example:**
+
+```bash
+# Create a prompt file
+echo "What is the capital of France?" > prompt.txt
+
+# Benchmark application models
+./openmodel bench --prompt prompt.txt --scope application
+
+# Benchmark all provider models
+./openmodel bench --prompt prompt.txt --scope providers
+```
+
+**Output includes:**
+- Response time
+- Token usage (prompt, completion, total)
+- Tokens per second
+- Response preview (truncated)
+
 ## Default Port
 
 The default port is **12345**. You can override this in your config:
@@ -207,19 +277,18 @@ make lint
 
 ## Test Coverage
 
-Current test coverage: **77.2%**
+Current test coverage: **53.0%**
 
 | Package | Coverage |
 |---------|----------|
-| internal/logger | 100% |
-| internal/state | 100% |
-| internal/provider | 87.9% |
-| internal/api/openai | 84.5% |
-| internal/server | 82.7% |
-| internal/config | 83.5% |
-| cmd | 31.0% |
-
-**All core packages ≥80% coverage** ✓
+| internal/logger | 74.0% |
+| internal/state | 78.0% |
+| internal/api/anthropic | 84.7% |
+| internal/provider | 72.6% |
+| internal/api/openai | 74.3% |
+| internal/config | 67.0% |
+| internal/server | 30.0% |
+| cmd | 26.2% |
 
 ## Releasing
 
