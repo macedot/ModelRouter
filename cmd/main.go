@@ -426,6 +426,12 @@ func runBench(promptFile, scope string, stream bool) {
 		os.Exit(1)
 	}
 
+	// Initialize logger
+	if err := logger.Init(cfg.LogLevel, cfg.LogFormat); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Read prompt file
 	prompt, err := os.ReadFile(promptFile)
 	if err != nil {
@@ -548,6 +554,13 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 
 		for _, endpoint := range endpoints {
 			startTime := time.Now()
+
+			logger.Info("Benchmarking model",
+				"model", modelName,
+				"provider", providerKey,
+				"url", baseURL,
+				"endpoint", endpoint,
+				"stream", stream)
 
 			var resp *benchResponse
 			var benchErr error
@@ -841,6 +854,13 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 
 		for _, modelName := range models {
 			startTime := time.Now()
+
+			logger.Info("Benchmarking provider model",
+				"provider", providerName,
+				"model", modelName,
+				"url", baseURL,
+				"endpoint", "/chat/completions",
+				"stream", stream)
 
 			resp, err := benchChat(ctx, prov, modelName, messages, stream)
 			duration := time.Since(startTime)
