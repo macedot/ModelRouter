@@ -149,9 +149,9 @@ func loadAndValidateConfig(configPath string) *config.Config {
 		logger.Info("Config loaded", "config_path", config.GetConfigPath())
 	}
 
-	// Print log level if not default (INFO)
+	// Print log level
 	if cfg.LogLevel != "" && cfg.LogLevel != "info" {
-		logger.Info("Log level set", "level", cfg.LogLevel)
+		logger.Debug("Log level set", "level", cfg.LogLevel)
 	}
 
 	// Validate all provider references exist

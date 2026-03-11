@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/macedot/openmodel/internal/api/openai"
 )
@@ -16,7 +17,17 @@ const maxResponseBodySize = 1024 * 1024 // 1MB
 
 // buildRequest creates an HTTP request with proper headers
 func (p *OpenAIProvider) buildRequest(ctx context.Context, body []byte, path string) (*http.Request, error) {
-	req, err := http.NewRequest("POST", p.baseURL+path, bytes.NewReader(body))
+	// Combine baseURL with path, avoiding /v1/v1 duplication
+	fullURL := p.baseURL
+	// If baseURL ends with /v1 and path starts with /v1, remove one /v1
+	if strings.HasSuffix(p.baseURL, "/v1") && strings.HasPrefix(path, "/v1") {
+		fullURL = p.baseURL + path[3:] // Remove /v1 from path
+	} else if strings.HasPrefix(path, "/") {
+		fullURL = p.baseURL + path
+	} else {
+		fullURL = p.baseURL + "/" + path
+	}
+	req, err := http.NewRequest("POST", fullURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
