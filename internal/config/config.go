@@ -193,7 +193,7 @@ type ServerConfig struct {
 // ProviderConfig holds provider connection settings
 type ProviderConfig struct {
 	URL        string            `json:"url"`        // Base URL for the provider (e.g., https://api.openai.com/v1)
-	APIKey     string            `json:"apiKey"`     // API key (supports ${VAR} expansion)
+	APIKey     string            `json:"api_key"`     // API key (supports ${VAR} expansion)
 	Models     []string          `json:"models"`     // List of models available on this provider
 	Thresholds *ThresholdsConfig `json:"thresholds"` // Provider-specific thresholds (optional, defaults to global)
 }

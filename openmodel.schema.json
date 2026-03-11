@@ -36,9 +36,9 @@
             "type": "string",
             "description": "Base URL for the OpenAI-compatible API"
           },
-          "apiKey": {
+          "api_key": {
             "type": "string",
-            "description": "API key for authentication"
+            "description": "API key for authentication (supports ${VAR} expansion)"
           },
           "models": {
             "type": "array",
@@ -77,7 +77,7 @@
     },
     "models": {
       "type": "object",
-      "description": "Map of model aliases to their provider configurations. Use 'provider/model' for explicit mapping or just 'modelname' to auto-resolve from provider's models list. Each model can have an optional 'strategy' property.",
+      "description": "Map of model aliases to their provider configurations. Use 'provider/model' for explicit mapping or just 'modelname' to auto-resolve from provider's models list.",
       "additionalProperties": {
         "oneOf": [
           {
@@ -120,6 +120,12 @@
                 "enum": ["fallback", "round-robin", "random"],
                 "default": "fallback",
                 "description": "Selection strategy for this model"
+              },
+              "api_mode": {
+                "type": "string",
+                "enum": ["openai", "anthropic", ""],
+                "default": "",
+                "description": "API format conversion mode: 'openai' for OpenAI format, 'anthropic' for Anthropic format, empty for passthrough"
               },
               "default": {
                 "type": "boolean",
@@ -184,12 +190,6 @@
         }
       }
     },
-    "selection_strategy": {
-      "type": "string",
-      "enum": ["fallback", "round-robin", "random"],
-      "default": "fallback",
-      "description": "Strategy for selecting a provider model: fallback (try in order), round-robin (cycle through), random (pick randomly)"
-    },
     "log_level": {
       "type": "string",
       "enum": ["trace", "debug", "info", "warn", "error"],
@@ -201,6 +201,115 @@
       "enum": ["text", "color", "json"],
       "default": "color",
       "description": "Log output format (color for colored terminal output)"
+    },
+    "rate_limit": {
+      "type": "object",
+      "description": "Rate limiting configuration for the server",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable per-IP rate limiting"
+        },
+        "requests_per_second": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Maximum requests per second per IP"
+        },
+        "burst": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 20,
+          "description": "Maximum burst size for rate limiting"
+        },
+        "cleanup_interval_ms": {
+          "type": "integer",
+          "minimum": 1000,
+          "default": 60000,
+          "description": "Interval in milliseconds for cleaning up stale entries"
+        },
+        "trusted_proxies": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": ["127.0.0.1", "::1"],
+          "description": "List of trusted proxy IP ranges (CIDR notation supported)"
+        }
+      }
+    },
+    "http": {
+      "type": "object",
+      "description": "HTTP client configuration",
+      "properties": {
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 120,
+          "description": "Request timeout in seconds"
+        },
+        "max_idle_conns": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 100,
+          "description": "Maximum number of idle connections"
+        },
+        "max_idle_conns_per_host": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 100,
+          "description": "Maximum idle connections per host"
+        },
+        "idle_conn_timeout_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 90,
+          "description": "Idle connection timeout in seconds"
+        },
+        "dial_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Dial timeout in seconds"
+        },
+        "tls_handshake_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "TLS handshake timeout in seconds"
+        },
+        "response_header_timeout_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30,
+          "description": "Response header timeout in seconds"
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "description": "Request/response size limits",
+      "properties": {
+        "max_request_body_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 52428800,
+          "description": "Maximum request body size in bytes (default: 50MB)"
+        },
+        "max_response_body_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 1048576,
+          "description": "Maximum response body size in bytes (default: 1MB)"
+        },
+        "max_stream_buffer_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 1048576,
+          "description": "Maximum stream buffer size in bytes (default: 1MB)"
+        }
+      }
     }
   }
 }
