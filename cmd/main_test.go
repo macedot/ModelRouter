@@ -36,34 +36,8 @@ func TestPrintUsage(t *testing.T) {
 	if !bytes.Contains(buf.Bytes(), []byte("serve")) {
 		t.Error("Expected 'serve' command in help output")
 	}
-	if !bytes.Contains(buf.Bytes(), []byte("test")) {
-		t.Error("Expected 'test' command in help output")
-	}
-}
-
-func TestPrintTestUsage(t *testing.T) {
-	oldStderr := os.Stderr
-	defer func() { os.Stderr = oldStderr }()
-
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"openmodel"}
-
-	fs := flag.NewFlagSet("test", flag.ExitOnError)
-	printTestUsage(fs)
-
-	w.Close()
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-
-	if !bytes.Contains(buf.Bytes(), []byte("Usage:")) {
-		t.Error("Expected 'Usage:' in test help output")
-	}
-	if !bytes.Contains(buf.Bytes(), []byte("test")) {
-		t.Error("Expected 'test' in test help output")
+	if !bytes.Contains(buf.Bytes(), []byte("bench")) {
+		t.Error("Expected 'bench' command in help output")
 	}
 }
 
@@ -113,12 +87,6 @@ func TestCommandParsing(t *testing.T) {
 			wantRemaining: []string{"-h"},
 		},
 		{
-			name:          "test command",
-			args:          []string{"test", "-model", "glm"},
-			wantCommand:   "test",
-			wantRemaining: []string{"-model", "glm"},
-		},
-		{
 			name:          "flags before command",
 			args:          []string{"-h", "serve"},
 			wantCommand:   "serve",
@@ -160,98 +128,6 @@ func TestCommandParsing(t *testing.T) {
 				t.Errorf("remaining args = %v, want %v", args, tt.wantRemaining)
 			}
 		})
-	}
-}
-
-func TestFlagParsingTestCommand(t *testing.T) {
-	tests := []struct {
-		name        string
-		args        []string
-		wantModel   string
-		wantCheck   bool
-		wantParseOK bool
-	}{
-		{
-			name:        "no flags",
-			args:        []string{},
-			wantModel:   "",
-			wantCheck:   false,
-			wantParseOK: true,
-		},
-		{
-			name:        "model flag",
-			args:        []string{"-model", "glm-4"},
-			wantModel:   "glm-4",
-			wantCheck:   false,
-			wantParseOK: true,
-		},
-		{
-			name:        "check flag",
-			args:        []string{"-check"},
-			wantModel:   "",
-			wantCheck:   true,
-			wantParseOK: true,
-		},
-		{
-			name:        "both flags",
-			args:        []string{"-model", "glm-5", "-check"},
-			wantModel:   "glm-5",
-			wantCheck:   true,
-			wantParseOK: true,
-		},
-		{
-			name:        "unknown flag",
-			args:        []string{"-unknown"},
-			wantModel:   "",
-			wantCheck:   false,
-			wantParseOK: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			flag := flag.NewFlagSet("test", flag.ContinueOnError)
-			flag.SetOutput(&bytes.Buffer{})
-
-			modelName := flag.String("model", "", "Model name to test")
-			jsonOutput := flag.Bool("check", false, "Output results in JSON")
-
-			err := flag.Parse(tt.args)
-			parseOK := err == nil
-
-			if parseOK != tt.wantParseOK {
-				t.Errorf("parse error = %v, want parseOK = %v", err, tt.wantParseOK)
-			}
-
-			if parseOK && *modelName != tt.wantModel {
-				t.Errorf("model = %q, want %q", *modelName, tt.wantModel)
-			}
-
-			if parseOK && *jsonOutput != tt.wantCheck {
-				t.Errorf("check = %v, want %v", *jsonOutput, tt.wantCheck)
-			}
-		})
-	}
-}
-
-func TestRunTestNoConfig(t *testing.T) {
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"openmodel", "test"}
-
-	modelName := new(string)
-	check := new(bool)
-	*modelName = ""
-	*check = false
-
-	cfg, err := config.Load()
-
-	if err == nil {
-		// Don't log full config - may contain sensitive data like API keys
-		t.Logf("Config loaded successfully (providers: %d, models: %d)",
-			len(cfg.Providers), len(cfg.Models))
-	} else {
-		t.Logf("Expected error (no config): %v", err)
 	}
 }
 
@@ -566,30 +442,6 @@ func TestPrintConfigUsage(t *testing.T) {
 	// Note: output uses lowercase "validate" not "Validate"
 	if !strings.Contains(output, "validate") {
 		t.Error("Expected 'validate' in help output")
-	}
-}
-
-func TestIntPtr(t *testing.T) {
-	tests := []struct {
-		name  string
-		input int
-	}{
-		{"zero", 0},
-		{"positive", 42},
-		{"negative", -10},
-		{"large", 1000000},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := intPtr(tt.input)
-			if result == nil {
-				t.Error("Expected non-nil result")
-			}
-			if *result != tt.input {
-				t.Errorf("intPtr(%d) = %d, want %d", tt.input, *result, tt.input)
-			}
-		})
 	}
 }
 

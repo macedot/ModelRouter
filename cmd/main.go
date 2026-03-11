@@ -37,13 +37,6 @@ var Version = "dev"
 // BuildDate is set at build time via -ldflags "-X main.BuildDate=..."
 var BuildDate = "unknown"
 
-// newTestFlagSet creates a FlagSet for the test command.
-func newTestFlagSet() *flag.FlagSet {
-	fs := flag.NewFlagSet("test", flag.ExitOnError)
-	fs.String("model", "", "Model name to test (tests all if omitted)")
-	return fs
-}
-
 // newModelsFlagSet creates a FlagSet for the models command.
 func newModelsFlagSet() *flag.FlagSet {
 	fs := flag.NewFlagSet("models", flag.ExitOnError)
@@ -66,13 +59,6 @@ func newServeFlagSet() *flag.FlagSet {
 	fs.String("config", "", "Path to config file (default: ~/.config/openmodel/config.json)")
 	fs.Bool("h", false, "Show help")
 	return fs
-}
-
-// MethodResult represents the result of testing a single API method.
-type MethodResult struct {
-	Success bool
-	Error   string
-	Latency string
 }
 
 func main() {
@@ -103,19 +89,6 @@ func main() {
 	if command == "" {
 		printUsage()
 		os.Exit(0)
-	}
-
-	if command == "test" {
-		fs := newTestFlagSet()
-		fs.Usage = func() { printTestUsage(fs) }
-
-		if err := fs.Parse(args); err != nil {
-			os.Exit(1)
-		}
-
-		modelName := fs.Lookup("model").Value.String()
-		runTest(modelName)
-		return
 	}
 
 	if command == "models" {
@@ -213,7 +186,6 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s [command]\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "\nCommands:\n")
 	fmt.Fprintf(os.Stderr, "  serve    Start the OpenModel server\n")
-	fmt.Fprintf(os.Stderr, "  test     Test configured providers\n")
 	fmt.Fprintf(os.Stderr, "  models   List available models\n")
 	fmt.Fprintf(os.Stderr, "  config   Find and validate config file\n")
 	fmt.Fprintf(os.Stderr, "  bench    Benchmark models with prompts\n")
@@ -307,12 +279,6 @@ func runServer(configPath string) {
 	if err := srv.Start(); err != nil && err != http.ErrServerClosed {
 		logger.Error("Server error", "error", err)
 	}
-}
-
-func printTestUsage(fs *flag.FlagSet) {
-	fmt.Fprintf(os.Stderr, "Usage: %s test [options]\n", os.Args[0])
-	fmt.Fprintf(os.Stderr, "\nOptions:\n")
-	fs.PrintDefaults()
 }
 
 func printServerUsage(fs *flag.FlagSet) {
@@ -449,140 +415,6 @@ func runConfig() {
 
 	// Only print path on success
 	fmt.Println(configPath)
-}
-
-func runTest(modelName string) {
-	if flag.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "Error: unexpected argument: %s\n\n", flag.Arg(0))
-		printTestUsage(flag.NewFlagSet("test", flag.ExitOnError))
-		os.Exit(1)
-	}
-
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := logger.Init(cfg.LogLevel, cfg.LogFormat); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		os.Exit(1)
-	}
-
-	logger.Info("Initializing providers")
-
-	providers := initProviders(cfg)
-
-	if modelName != "" {
-		logger.Info("Testing specific model", "model", modelName)
-	} else {
-		logger.Info("Testing all configured models")
-	}
-
-	failed := runTests(providers, cfg, modelName)
-
-	if failed > 0 {
-		os.Exit(1)
-	}
-}
-
-func runTests(providers map[string]provider.Provider, cfg *config.Config, modelName string) int {
-	failed := 0
-
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	// Determine which providers to test
-	providersToTest := cfg.Providers
-	if modelName != "" {
-		// If a specific model is given, find which provider has it
-		found := false
-		for name, prov := range cfg.Providers {
-			for _, m := range prov.Models {
-				if m == modelName {
-					providersToTest = map[string]config.ProviderConfig{
-						name: prov,
-					}
-					found = true
-					break
-				}
-			}
-			if found {
-				break
-			}
-		}
-		if !found {
-			logger.Error("Model not found in any provider", "model", modelName)
-			return 1
-		}
-	}
-
-	// Test each provider's models
-	for provName, provConfig := range providersToTest {
-		prov, exists := providers[provName]
-		if !exists {
-			logger.Error("Provider not initialized", "provider", provName)
-			failed++
-			continue
-		}
-
-		baseURL := prov.BaseURL()
-		for _, model := range provConfig.Models {
-			logger.Info("Testing provider model", "provider", provName, "model", model, "url", baseURL, "endpoint", "/chat/completions")
-
-			// Test Chat with "hi" message
-			chatResult := testChatModel(ctx, prov, model)
-
-			if chatResult.Success {
-				logger.Info("Test passed", "provider", provName, "model", model, "url", baseURL, "endpoint", "/chat/completions", "latency", chatResult.Latency)
-			} else {
-				failed++
-				logger.Error("Test failed", "provider", provName, "model", model, "url", baseURL, "endpoint", "/chat/completions", "error", chatResult.Error)
-			}
-		}
-	}
-
-	total := 0
-	for _, provConfig := range providersToTest {
-		total += len(provConfig.Models)
-	}
-	passed := total - failed
-	logger.Info("Test completed", "total", total, "passed", passed, "failed", failed)
-
-	return failed
-}
-
-func testChatModel(ctx context.Context, prov provider.Provider, model string) *MethodResult {
-	start := time.Now()
-
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role:    "user",
-			Content: "hi",
-		},
-	}
-
-	_, err := prov.Chat(ctx, model, messages, &openai.ChatCompletionRequest{
-		MaxTokens: intPtr(10),
-	})
-	latency := time.Since(start)
-
-	if err != nil {
-		return &MethodResult{
-			Success: false,
-			Error:   err.Error(),
-			Latency: latency.String(),
-		}
-	}
-
-	return &MethodResult{
-		Success: true,
-		Latency: latency.String(),
-	}
-}
-
-func intPtr(i int) *int {
-	return &i
 }
 
 // runBench executes benchmark tests based on scope mode
