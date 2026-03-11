@@ -230,13 +230,13 @@ func runServer(configPath string) {
 		if err != nil {
 			log.Fatalf("Failed to load config: %v", err)
 		}
-		fmt.Fprintf(os.Stderr, "Config loaded from custom path: %s\n", configPath)
+		logger.Info("Config loaded from custom path", "config_path", configPath)
 	} else {
 		cfg, err = config.Load()
 		if err != nil {
 			log.Fatalf("Failed to load config: %v", err)
 		}
-		fmt.Fprintf(os.Stderr, "Config loaded: %s\n", config.GetConfigPath())
+		logger.Info("Config loaded", "config_path", config.GetConfigPath())
 	}
 
 	// Initialize logger (after config is loaded so we have the log level)
