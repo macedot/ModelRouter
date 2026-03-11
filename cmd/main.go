@@ -146,7 +146,7 @@ func loadAndValidateConfig(configPath string) *config.Config {
 	if configPath != "" {
 		logger.Info("Config loaded from custom path", "config_path", configPath)
 	} else {
-		logger.Info("Config loaded", "config_path", config.GetConfigPath())
+		logger.Info("Config loaded", "config_path", cfg.GetConfigPath())
 	}
 
 	// Print log level
@@ -389,7 +389,13 @@ func runConfigCmd(args []string) {
 }
 
 func runConfig() {
-	configPath := config.GetConfigPath()
+	cfg, err := config.Load("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	configPath := cfg.GetConfigPath()
 	if configPath == "" {
 		fmt.Fprintln(os.Stderr, "Error: could not determine config path (home directory not found)")
 		os.Exit(1)
@@ -398,13 +404,6 @@ func runConfig() {
 	// Check if config file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "Error: config file not found: %s\n", configPath)
-		os.Exit(1)
-	}
-
-	// Try to load and validate config
-	_, err := config.Load("")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -435,23 +434,7 @@ func runBenchCmd(args []string) {
 
 // runBench executes benchmark tests based on scope mode
 func runBench(promptFile, scope string, stream bool) {
-	// Load config
-	cfg, err := config.Load("")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Initialize logger
-	if err := logger.Init(cfg.LogLevel, cfg.LogFormat); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Print log level if not default (INFO)
-	if cfg.LogLevel != "" && cfg.LogLevel != "info" {
-		logger.Info("Log level set", "level", cfg.LogLevel)
-	}
+	cfg := loadAndValidateConfig("")
 
 	// Read prompt file
 	prompt, err := os.ReadFile(promptFile)

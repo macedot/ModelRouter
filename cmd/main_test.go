@@ -354,8 +354,12 @@ func TestRunConfig_WithValidConfig(t *testing.T) {
 
 // TestRunConfig_WithRealConfig tests runConfig using the existing config in the environment
 func TestRunConfig_WithRealConfig(t *testing.T) {
-	// Skip if no config file exists (e.g., on CI)
-	configPath := config.GetConfigPath()
+	// Load config first to get the path
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Skip("config file not found, skipping test")
+	}
+	configPath := cfg.GetConfigPath()
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		t.Skip("config file not found, skipping test")
 	}
@@ -469,7 +473,8 @@ func TestGetConfigPathNoHomeDir(t *testing.T) {
 		}
 	}()
 
-	path := config.GetConfigPath()
+	cfg := &config.Config{}
+	path := cfg.GetConfigPath()
 	if path != "" {
 		t.Errorf("expected empty path when HOME is not set, got %q", path)
 	}
@@ -490,7 +495,8 @@ func TestGetConfigPathWithExplicitConfig(t *testing.T) {
 	testPath := "/nonexistent/path/config.json"
 	os.Setenv("OPENMODEL_CONFIG", testPath)
 
-	path := config.GetConfigPath()
+	cfg := &config.Config{}
+	path := cfg.GetConfigPath()
 	if path != testPath {
 		t.Errorf("expected %q, got %q", testPath, path)
 	}
@@ -529,7 +535,8 @@ func TestGetConfigPathWithTempHome(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.Setenv("HOME", tmpDir)
 
-	path := config.GetConfigPath()
+	cfg := &config.Config{}
+	path := cfg.GetConfigPath()
 	// Path should exist but file should not
 	expectedPath := filepath.Join(tmpDir, ".config", "openmodel", "openmodel.json")
 	if path != expectedPath {

@@ -87,16 +87,17 @@ func jsonUnmarshalWithLines(data []byte, v interface{}, context string) error {
 
 // Config represents the openmodel configuration
 type Config struct {
-	Server     ServerConfig              `json:"server"`
-	Providers  map[string]ProviderConfig `json:"providers"`
-	Models     map[string]ModelConfig    `json:"models"`
-	ModelOrder []string                  `json:"-"` // Preserves order of models from config file
-	LogLevel   string                    `json:"log_level"`
-	LogFormat  string                    `json:"log_format"`
-	Thresholds ThresholdsConfig          `json:"thresholds"`
-	RateLimit  *RateLimitConfig          `json:"rate_limit,omitempty"`
-	HTTP       HTTPConfig                `json:"http,omitempty"`
-	Limits     LimitsConfig              `json:"limits,omitempty"`
+	Server      ServerConfig              `json:"server"`
+	Providers   map[string]ProviderConfig `json:"providers"`
+	Models      map[string]ModelConfig    `json:"models"`
+	ModelOrder  []string                  `json:"-"` // Preserves order of models from config file
+	LogLevel    string                    `json:"log_level"`
+	LogFormat   string                    `json:"log_format"`
+	Thresholds  ThresholdsConfig          `json:"thresholds"`
+	RateLimit   *RateLimitConfig          `json:"rate_limit,omitempty"`
+	HTTP        HTTPConfig                `json:"http,omitempty"`
+	Limits      LimitsConfig              `json:"limits,omitempty"`
+	configPath  string                    `json:"-"` // Path to config file that was loaded
 }
 
 // RateLimitConfig holds rate limiting configuration
@@ -502,9 +503,13 @@ func expandProviderEnvVars(pc *ProviderConfig) {
 	pc.URL = expandEnvVars(pc.URL)
 }
 
-// GetConfigPath returns the path to the config file (for backward compatibility)
-func GetConfigPath() string {
-	// Check for explicit config path in env
+// GetConfigPath returns the path to the config file
+// Uses the stored path if available, otherwise calculates from environment
+func (c *Config) GetConfigPath() string {
+	if c.configPath != "" {
+		return c.configPath
+	}
+	// Fallback: check for explicit config path in env
 	if path := os.Getenv("OPENMODEL_CONFIG"); path != "" {
 		return path
 	}
@@ -514,6 +519,11 @@ func GetConfigPath() string {
 		return ""
 	}
 	return filepath.Join(homeDir, ".config", "openmodel", "openmodel.json")
+}
+
+// GetConfigPath returns the path to the config file (standalone function for backward compatibility)
+func GetConfigPath() string {
+	return (&Config{}).GetConfigPath()
 }
 
 // GetConfigPaths returns both config paths: current directory and user config
@@ -566,7 +576,12 @@ func Load(path string) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read config file: %w", err)
 		}
-		return parseConfig(data, true)
+		cfg, err := parseConfig(data, true)
+		if err != nil {
+			return nil, err
+		}
+		cfg.configPath = path
+		return cfg, nil
 	}
 
 	// No explicit path, use default locations
@@ -588,16 +603,31 @@ func Load(path string) (*Config, error) {
 
 	// If only user config exists, use it
 	if currentDirErr != nil && len(userConfigData) > 0 {
-		return parseConfig(userConfigData, true)
+		cfg, err := parseConfig(userConfigData, true)
+		if err != nil {
+			return nil, err
+		}
+		cfg.configPath = userConfigPath
+		return cfg, nil
 	}
 
 	// If only current dir config exists, use it
 	if len(userConfigData) == 0 {
-		return parseConfig(currentDirData, true)
+		cfg, err := parseConfig(currentDirData, true)
+		if err != nil {
+			return nil, err
+		}
+		cfg.configPath = currentDirPath
+		return cfg, nil
 	}
 
 	// Both exist: merge them (current dir has higher priority)
-	return mergeAndParseConfig(userConfigData, currentDirData)
+	cfg, err := mergeAndParseConfig(userConfigData, currentDirData)
+	if err != nil {
+		return nil, err
+	}
+	cfg.configPath = currentDirPath
+	return cfg, nil
 }
 
 // mergeAndParseConfig merges two config byte slices and parses them

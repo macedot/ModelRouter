@@ -288,7 +288,7 @@ func TestLoad(t *testing.T) {
 		os.Setenv("OPENMODEL_CONFIG", "/nonexistent/.config/openmodel/config.json")
 		defer os.Unsetenv("OPENMODEL_CONFIG")
 
-		cfg, err := Load()
+		cfg, err := Load("")
 		if err != nil {
 			t.Fatalf("Load() error = %v", err)
 		}
@@ -301,7 +301,7 @@ func TestLoad(t *testing.T) {
 	t.Run("config file not found returns defaults", func(t *testing.T) {
 		os.Setenv("OPENMODEL_CONFIG", "/nonexistent/config.json")
 
-		cfg, err := Load()
+		cfg, err := Load("")
 		if err != nil {
 			t.Fatalf("Load() error = %v", err)
 		}
@@ -322,7 +322,7 @@ func TestLoad(t *testing.T) {
 
 		os.Setenv("OPENMODEL_CONFIG", configPath)
 
-		_, err := Load()
+		_, err := Load("")
 		if err == nil {
 			t.Error("Load() expected error for missing $schema field")
 		}
@@ -337,7 +337,7 @@ func TestLoad(t *testing.T) {
 
 		os.Setenv("OPENMODEL_CONFIG", configPath)
 
-		_, err := Load()
+		_, err := Load("")
 		if err == nil {
 			t.Error("Load() expected error for invalid JSON")
 		}
@@ -600,7 +600,7 @@ func TestLoad_SchemaValidationFailure(t *testing.T) {
 
 	os.Setenv("OPENMODEL_CONFIG", configPath)
 
-	_, err = Load()
+	_, err = Load("")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "validation failed")
 }
