@@ -132,30 +132,21 @@ func initProviders(cfg *config.Config) map[string]provider.Provider {
 
 // loadAndValidateConfig loads config, initializes logger, validates, and returns cfg
 func loadAndValidateConfig(configPath string) *config.Config {
-	var cfg *config.Config
-	var err error
-
-	if configPath != "" {
-		// Validate custom config path exists
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			log.Fatalf("Config file not found: %s", configPath)
-		}
-		cfg, err = config.LoadFromPath(configPath)
-		if err != nil {
-			log.Fatalf("Failed to load config: %v", err)
-		}
-		logger.Info("Config loaded from custom path", "config_path", configPath)
-	} else {
-		cfg, err = config.Load()
-		if err != nil {
-			log.Fatalf("Failed to load config: %v", err)
-		}
-		logger.Info("Config loaded", "config_path", config.GetConfigPath())
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Initialize logger (after config is loaded so we have the log level)
+	// Initialize logger after config is loaded
 	if err := logger.Init(cfg.LogLevel, cfg.LogFormat); err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+
+	// Print config path
+	if configPath != "" {
+		logger.Info("Config loaded from custom path", "config_path", configPath)
+	} else {
+		logger.Info("Config loaded", "config_path", config.GetConfigPath())
 	}
 
 	// Print log level if not default (INFO)
@@ -294,7 +285,7 @@ func runModelsCmd(args []string) {
 		os.Exit(1)
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.Load("")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
@@ -305,7 +296,7 @@ func runModelsCmd(args []string) {
 
 // runModels is a wrapper for backward compatibility with tests
 func runModels(_ bool) {
-	cfg, err := config.Load()
+	cfg, err := config.Load("")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
@@ -411,7 +402,7 @@ func runConfig() {
 	}
 
 	// Try to load and validate config
-	_, err := config.Load()
+	_, err := config.Load("")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -445,7 +436,7 @@ func runBenchCmd(args []string) {
 // runBench executes benchmark tests based on scope mode
 func runBench(promptFile, scope string, stream bool) {
 	// Load config
-	cfg, err := config.Load()
+	cfg, err := config.Load("")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 		os.Exit(1)
@@ -496,21 +487,21 @@ func runBench(promptFile, scope string, stream bool) {
 
 // benchResult holds the result of a single benchmark run
 type benchResult struct {
-	Type        string `json:"type"`
-	Provider    string `json:"provider"`
-	Model       string `json:"model"`
-	ProviderID  string `json:"provider_id,omitempty"`
-	Strategy    string `json:"strategy,omitempty"`
-	ApiMode     string `json:"api_mode,omitempty"`
-	URL         string `json:"url"`
-	Endpoint    string `json:"endpoint"`
-	Prompt      string `json:"prompt,omitempty"`
-	Error       string `json:"error,omitempty"`
-	Response    string `json:"response,omitempty"`
-	Duration    string `json:"duration"`
-	Stream      bool   `json:"stream"`
-	Tokens      *benchTokens `json:"tokens,omitempty"`
-	TokensPerSec float64 `json:"tokens_per_sec,omitempty"`
+	Type         string       `json:"type"`
+	Provider     string       `json:"provider"`
+	Model        string       `json:"model"`
+	ProviderID   string       `json:"provider_id,omitempty"`
+	Strategy     string       `json:"strategy,omitempty"`
+	ApiMode      string       `json:"api_mode,omitempty"`
+	URL          string       `json:"url"`
+	Endpoint     string       `json:"endpoint"`
+	Prompt       string       `json:"prompt,omitempty"`
+	Error        string       `json:"error,omitempty"`
+	Response     string       `json:"response,omitempty"`
+	Duration     string       `json:"duration"`
+	Stream       bool         `json:"stream"`
+	Tokens       *benchTokens `json:"tokens,omitempty"`
+	TokensPerSec float64      `json:"tokens_per_sec,omitempty"`
 }
 
 type benchTokens struct {
@@ -803,9 +794,9 @@ func benchAnthropicStream(ctx context.Context, prov provider.Provider, body []by
 
 		// Parse the Anthropic event
 		var event struct {
-			Type    string `json:"type"`
-			Index   int    `json:"index"`
-			Delta   struct {
+			Type  string `json:"type"`
+			Index int    `json:"index"`
+			Delta struct {
 				Type string `json:"type"`
 				Text string `json:"text"`
 			} `json:"delta"`

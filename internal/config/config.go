@@ -553,22 +553,24 @@ func getLogFormat() string {
 	return "color"
 }
 
-// Load loads configuration from file, merging current directory config with user config
-// Current directory config has higher priority
-func Load() (*Config, error) {
-	currentDirPath, userConfigPath := GetConfigPaths()
-
-	// If explicit path set via env, use only that
-	if currentDirPath != "" && userConfigPath == "" {
-		if _, err := os.Stat(currentDirPath); os.IsNotExist(err) {
-			return DefaultConfig(), nil
+// Load loads configuration from the specified path or default locations.
+// If path is empty, it merges current directory config with user config.
+// Current directory config has higher priority when merging.
+func Load(path string) (*Config, error) {
+	// If explicit path provided, load from that path
+	if path != "" {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return nil, fmt.Errorf("config file not found: %s", path)
 		}
-		data, err := os.ReadFile(currentDirPath)
+		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read config file: %w", err)
 		}
 		return parseConfig(data, true)
 	}
+
+	// No explicit path, use default locations
+	currentDirPath, userConfigPath := GetConfigPaths()
 
 	// Try current directory first
 	currentDirData, currentDirErr := os.ReadFile(currentDirPath)
