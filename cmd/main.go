@@ -243,6 +243,11 @@ func runServer(configPath string) {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
 
+	// Print log level if not default (INFO)
+	if cfg.LogLevel != "" && cfg.LogLevel != "info" {
+		logger.Info("Log level set", "level", cfg.LogLevel)
+	}
+
 	// Validate all provider references exist
 	if err := cfg.ValidateProviderReferences(); err != nil {
 		log.Fatalf("Configuration error:\n%v", err)
@@ -431,6 +436,11 @@ func runBench(promptFile, scope string, stream bool) {
 	if err := logger.Init(cfg.LogLevel, cfg.LogFormat); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Print log level if not default (INFO)
+	if cfg.LogLevel != "" && cfg.LogLevel != "info" {
+		logger.Info("Log level set", "level", cfg.LogLevel)
 	}
 
 	// Read prompt file
