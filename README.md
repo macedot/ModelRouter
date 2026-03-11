@@ -187,7 +187,7 @@ Find and validate config file:
 Benchmark models by submitting prompts:
 
 ```bash
-./openmodel bench --prompt <file> [--scope <mode>]
+./openmodel bench -prompt <file> [-scope <mode>]
 ```
 
 **Options:**
@@ -206,10 +206,10 @@ Benchmark models by submitting prompts:
 echo "What is the capital of France?" > prompt.txt
 
 # Benchmark application models
-./openmodel bench --prompt prompt.txt --scope application
+./openmodel bench -prompt prompt.txt -scope application
 
 # Benchmark all provider models
-./openmodel bench --prompt prompt.txt --scope providers
+./openmodel bench -prompt prompt.txt -scope providers
 ```
 
 **Output includes:**
