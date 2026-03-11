@@ -43,10 +43,11 @@ func New(cfg *config.Config, providers map[string]provider.Provider, stateMgr *s
 		if cfg.RateLimit.CleanupIntervalMs > 0 {
 			cleanupInterval = time.Duration(cfg.RateLimit.CleanupIntervalMs) * time.Millisecond
 		}
-		srv.limiter = NewRateLimiter(
+		srv.limiter = NewRateLimiterWithTrustedProxies(
 			cfg.RateLimit.RequestsPerSecond,
 			cfg.RateLimit.Burst,
 			cleanupInterval,
+			cfg.RateLimit.TrustedProxies,
 		)
 	}
 
@@ -72,11 +73,12 @@ func generateRequestID() string {
 // Start starts the Fiber server
 func (s *Server) Start() error {
 	s.app = fiber.New(fiber.Config{
-		ReadTimeout:   DefaultReadTimeout,
-		WriteTimeout:  DefaultWriteTimeout,
-		IdleTimeout:   DefaultIdleTimeout,
-		StrictRouting: true,
-		CaseSensitive: true,
+		ReadTimeout:    DefaultReadTimeout,
+		WriteTimeout:   DefaultWriteTimeout,
+		IdleTimeout:    DefaultIdleTimeout,
+		StrictRouting:  true,
+		CaseSensitive:  true,
+		BodyLimit:      DefaultMaxRequestBody,
 	})
 
 	// Recovery middleware
@@ -150,7 +152,8 @@ func (s *Server) rateLimitMiddleware() fiber.Handler {
 			return c.Next()
 		}
 
-		ip := c.IP()
+		// Get client IP with trusted proxy support
+		ip := s.limiter.GetClientIP(c.IP(), c.Get("X-Forwarded-For"), c.Get("X-Real-IP"))
 		if !s.limiter.Allow(ip) {
 			requestID, _ := c.Locals("request_id").(string)
 			applogger.Warn("rate_limit_exceeded", "request_id", requestID, "ip", ip)

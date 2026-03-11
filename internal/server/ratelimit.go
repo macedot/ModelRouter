@@ -2,6 +2,7 @@
 package server
 
 import (
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -9,12 +10,13 @@ import (
 
 // RateLimiter implements a token bucket rate limiter per IP address
 type RateLimiter struct {
-	mu          sync.RWMutex
-	buckets     map[string]*tokenBucket
-	rate        int           // requests per second
-	burst       int           // max burst size
-	cleanup     time.Duration // cleanup interval
-	lastCleanup time.Time
+	mu            sync.RWMutex
+	buckets       map[string]*tokenBucket
+	rate          int           // requests per second
+	burst         int           // max burst size
+	cleanup       time.Duration // cleanup interval
+	lastCleanup   time.Time
+	trustedProxies []*net.IPNet // CIDR networks that are trusted to send X-Forwarded-For headers
 }
 
 // tokenBucket represents a token bucket for rate limiting
@@ -26,12 +28,65 @@ type tokenBucket struct {
 // NewRateLimiter creates a new rate limiter with the given rate and burst
 func NewRateLimiter(rate, burst int, cleanup time.Duration) *RateLimiter {
 	return &RateLimiter{
-		buckets:     make(map[string]*tokenBucket),
-		rate:        rate,
-		burst:       burst,
-		cleanup:     cleanup,
-		lastCleanup: time.Now(),
+		buckets:       make(map[string]*tokenBucket),
+		rate:          rate,
+		burst:         burst,
+		cleanup:       cleanup,
+		lastCleanup:   time.Now(),
+		trustedProxies: nil,
 	}
+}
+
+// NewRateLimiterWithTrustedProxies creates a new rate limiter with trusted proxy support
+func NewRateLimiterWithTrustedProxies(rate, burst int, cleanup time.Duration, trustedProxies []string) *RateLimiter {
+	rl := NewRateLimiter(rate, burst, cleanup)
+	rl.trustedProxies = parseTrustedProxies(trustedProxies)
+	return rl
+}
+
+// parseTrustedProxies converts CIDR strings to IPNet slices
+func parseTrustedProxies(proxies []string) []*net.IPNet {
+	if len(proxies) == 0 {
+		return nil
+	}
+
+	nets := make([]*net.IPNet, 0, len(proxies))
+	for _, proxy := range proxies {
+		// Handle single IPs by converting to CIDR
+		if !strings.Contains(proxy, "/") {
+			// IPv4
+			if strings.Contains(proxy, ":") {
+				proxy += "/128" // IPv6 single host
+			} else {
+				proxy += "/32" // IPv4 single host
+			}
+		}
+
+		_, ipNet, err := net.ParseCIDR(proxy)
+		if err == nil {
+			nets = append(nets, ipNet)
+		}
+	}
+	return nets
+}
+
+// isTrustedProxy checks if an IP is in the trusted proxy list
+func (rl *RateLimiter) isTrustedProxy(ip string) bool {
+	if len(rl.trustedProxies) == 0 {
+		return false
+	}
+
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return false
+	}
+
+	for _, trustedNet := range rl.trustedProxies {
+		if trustedNet.Contains(parsedIP) {
+			return true
+		}
+	}
+	return false
 }
 
 // NewDefaultRateLimiter creates a rate limiter with sensible defaults
@@ -102,10 +157,24 @@ func (rl *RateLimiter) GetStats() (int, int) {
 	return len(rl.buckets), rl.rate
 }
 
-// getClientIPFiber extracts the client IP from Fiber context
-func getClientIPFiber(c interface{ IP() string; Get(string) string }) string {
+// GetClientIP extracts the real client IP from the request.
+// If trusted proxies are configured and the direct connection IP is in the trusted list,
+// it will extract the client IP from X-Forwarded-For or X-Real-IP headers.
+// Otherwise, it returns the direct connection IP.
+func (rl *RateLimiter) GetClientIP(directIP string, xff string, xri string) string {
+	// If no trusted proxies configured, always use direct IP
+	if len(rl.trustedProxies) == 0 {
+		return directIP
+	}
+
+	// If direct IP is not a trusted proxy, use it directly
+	if !rl.isTrustedProxy(directIP) {
+		return directIP
+	}
+
+	// Direct IP is a trusted proxy - check headers for real client IP
 	// Check X-Forwarded-For header (common for proxies)
-	if xff := c.Get("X-Forwarded-For"); xff != "" {
+	if xff != "" {
 		// Take the first IP (original client)
 		ips := strings.Split(xff, ",")
 		if len(ips) > 0 {
@@ -117,10 +186,20 @@ func getClientIPFiber(c interface{ IP() string; Get(string) string }) string {
 	}
 
 	// Check X-Real-IP header
-	if xri := c.Get("X-Real-IP"); xri != "" {
+	if xri != "" {
 		return xri
 	}
 
-	// Fall back to Fiber's IP method
-	return c.IP()
+	// Headers not available or empty, fall back to direct IP
+	return directIP
+}
+
+// getClientIPFiber extracts the client IP from Fiber context.
+// This function uses the rate limiter's trusted proxy configuration.
+// Deprecated: Use RateLimiter.GetClientIP instead for better control.
+func (rl *RateLimiter) getClientIPFiber(c interface {
+	IP() string
+	Get(string) string
+}) string {
+	return rl.GetClientIP(c.IP(), c.Get("X-Forwarded-For"), c.Get("X-Real-IP"))
 }

@@ -3,8 +3,11 @@ package config
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +17,16 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
+
+// Environment variable to control remote schema fetching
+// Set to "false" or "0" to disallow remote schemas (security hardening)
+const envAllowRemoteSchemas = "OPENMODEL_ALLOW_REMOTE_SCHEMAS"
+
+// Known schema checksums for integrity verification
+// Maps schema URLs to their expected SHA256 checksums
+var knownSchemaChecksums = map[string]string{
+	"https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json": "known-sha256-to-be-verified",
+}
 
 // jsonErrorWithContext wraps JSON parsing errors with line number and context
 func jsonErrorWithContext(data []byte, err error, context string) error {
@@ -88,10 +101,11 @@ type Config struct {
 
 // RateLimitConfig holds rate limiting configuration
 type RateLimitConfig struct {
-	Enabled           bool `json:"enabled"`
-	RequestsPerSecond int  `json:"requests_per_second"`
-	Burst             int  `json:"burst"`
-	CleanupIntervalMs int  `json:"cleanup_interval_ms"`
+	Enabled           bool     `json:"enabled"`
+	RequestsPerSecond int      `json:"requests_per_second"`
+	Burst             int      `json:"burst"`
+	CleanupIntervalMs int      `json:"cleanup_interval_ms"`
+	TrustedProxies    []string `json:"trusted_proxies"` // List of trusted proxy IP ranges (CIDR notation supported)
 }
 
 // HTTPConfig holds HTTP client configuration
@@ -329,8 +343,19 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 	compiler := jsonschema.NewCompiler()
 
 	var schemaData any
+	var schemaBytes []byte
 
-	if strings.HasPrefix(schemaURL, "http://") || strings.HasPrefix(schemaURL, "https://") {
+	isRemote := strings.HasPrefix(schemaURL, "http://") || strings.HasPrefix(schemaURL, "https://")
+
+	if isRemote {
+		// Check if remote schemas are allowed
+		if !isRemoteSchemaAllowed() {
+			return nil, fmt.Errorf("remote schema fetching is disabled (set %s=true to allow)", envAllowRemoteSchemas)
+		}
+
+		// Warn about remote schema fetching
+		fmt.Fprintf(os.Stderr, "Warning: Fetching remote schema from %s (potential security risk)\n", schemaURL)
+
 		client := &http.Client{Timeout: 5 * time.Second} // Reduced timeout for better availability
 		resp, err := client.Get(schemaURL)
 		if err != nil {
@@ -342,7 +367,21 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 			return nil, fmt.Errorf("schema fetch returned status %d", resp.StatusCode)
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&schemaData); err != nil {
+		// Read all bytes for checksum verification
+		schemaBytes, err = readAllWithLimit(resp.Body, 10*1024*1024) // 10MB limit
+		if err != nil {
+			return nil, fmt.Errorf("failed to read schema: %w", err)
+		}
+
+		// Verify checksum if known
+		if expectedChecksum, known := knownSchemaChecksums[schemaURL]; known && expectedChecksum != "" {
+			actualChecksum := sha256Sum(schemaBytes)
+			if actualChecksum != expectedChecksum {
+				return nil, fmt.Errorf("schema checksum mismatch: expected %s, got %s", expectedChecksum, actualChecksum)
+			}
+		}
+
+		if err := json.Unmarshal(schemaBytes, &schemaData); err != nil {
 			return nil, fmt.Errorf("failed to parse schema: %w", err)
 		}
 	} else {
@@ -354,7 +393,8 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 			schemaPath = filepath.Join(filepath.Dir(os.Args[0]), schemaURL)
 		}
 
-		schemaBytes, err := os.ReadFile(schemaPath)
+		var err error
+		schemaBytes, err = os.ReadFile(schemaPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read schema file: %w", err)
 		}
@@ -372,6 +412,26 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 	schemaCache.compilers[schemaURL] = compiler
 
 	return compiler, nil
+}
+
+// isRemoteSchemaAllowed checks if remote schema fetching is allowed
+func isRemoteSchemaAllowed() bool {
+	val := os.Getenv(envAllowRemoteSchemas)
+	if val == "" {
+		return true // Default: allow for backward compatibility
+	}
+	return strings.ToLower(val) != "false" && val != "0"
+}
+
+// readAllWithLimit reads from reader with a size limit to prevent memory exhaustion
+func readAllWithLimit(r io.Reader, limit int64) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(r, limit))
+}
+
+// sha256Sum computes the SHA256 checksum of data and returns it as hex string
+func sha256Sum(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
 }
 
 // DefaultConfig returns the default configuration

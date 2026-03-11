@@ -2025,3 +2025,55 @@ func BenchmarkChat(b *testing.B) {
 		}
 	}
 }
+
+func TestSanitizeProviderName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"alphanumeric", "openai", "openai"},
+		{"with dash", "my-provider", "my-provider"},
+		{"with underscore", "my_provider", "my_provider"},
+		{"with path traversal", "../etc/passwd", "etcpasswd"},
+		{"with special chars", "pro@vider!#", "provider"},
+		{"empty string", "", "unknown"},
+		{"only special chars", "@#$%", "unknown"},
+		{"mixed", "my-provider_123", "my-provider_123"},
+		{"uppercase", "OPENAI", "OPENAI"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeProviderName(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeProviderName(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSanitizeRequestID(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"alphanumeric", "abc123", "abc123"},
+		{"with dash", "abc-123", "abc123"},
+		{"with underscore", "abc_123", "abc123"},
+		{"with special chars", "req@123!", "req123"},
+		{"empty string", "", "unknown"},
+		{"only special chars", "@#$%", "unknown"},
+		{"uppercase", "ABC123", "ABC123"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizeRequestID(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeRequestID(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}

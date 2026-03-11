@@ -27,13 +27,47 @@ func createTraceFileForRequest(providerName, requestID string) *os.File {
 		return nil
 	}
 
+	// Sanitize provider name to prevent path traversal (only allow alphanumeric and dash/underscore)
+	sanitizedProvider := sanitizeProviderName(providerName)
+	sanitizedRequestID := sanitizeRequestID(requestID)
+
 	// Create file with timestamp prefix in current directory
-	filename := fmt.Sprintf("%d-%s-%s.json", time.Now().UnixNano(), providerName, requestID)
+	filename := fmt.Sprintf("%d-%s-%s.json", time.Now().UnixNano(), sanitizedProvider, sanitizedRequestID)
 	f, err := os.Create(filename)
 	if err != nil {
 		return nil
 	}
 	return f
+}
+
+// sanitizeProviderName sanitizes provider names for use in trace filenames.
+// Only allows alphanumeric characters, dash, and underscore.
+func sanitizeProviderName(name string) string {
+	var result strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			result.WriteRune(r)
+		}
+	}
+	if result.Len() == 0 {
+		return "unknown"
+	}
+	return result.String()
+}
+
+// sanitizeRequestID sanitizes request IDs for use in trace filenames.
+// Only allows alphanumeric characters.
+func sanitizeRequestID(id string) string {
+	var result strings.Builder
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			result.WriteRune(r)
+		}
+	}
+	if result.Len() == 0 {
+		return "unknown"
+	}
+	return result.String()
 }
 
 // prettyPrintJSON formats JSON with indentation.
@@ -664,8 +698,9 @@ func (p *OpenAIProvider) DoRequest(ctx context.Context, endpoint string, body []
 	traceFile := createTraceFileForRequest(p.name, requestID)
 	if traceFile != nil {
 		defer traceFile.Close()
+		redactedHeaders := applogger.RedactHeaders(headers)
 		fmt.Fprintf(traceFile, "{\"type\":\"request\",\"provider\":\"%s\",\"original_url\":\"%s\",\"endpoint\":\"%s\",\"url\":\"%s\",\"headers\":%q,\"body\":%s}\n",
-			p.name, originalURL, endpoint, p.baseURL+endpoint, headers, body)
+			p.name, originalURL, endpoint, p.baseURL+endpoint, redactedHeaders, body)
 	}
 
 	req, err := p.buildRequest(ctx, body, endpoint)
@@ -718,8 +753,9 @@ func (p *OpenAIProvider) DoStreamRequest(ctx context.Context, endpoint string, b
 	// Create per-request trace file
 	traceFile := createTraceFileForRequest(p.name, requestID)
 	if traceFile != nil {
+		redactedHeaders := applogger.RedactHeaders(headers)
 		fmt.Fprintf(traceFile, "{\"type\":\"request\",\"provider\":\"%s\",\"original_url\":\"%s\",\"endpoint\":\"%s\",\"url\":\"%s\",\"headers\":%q,\"body\":%s}\n",
-			p.name, originalURL, endpoint, p.baseURL+endpoint, headers, body)
+			p.name, originalURL, endpoint, p.baseURL+endpoint, redactedHeaders, body)
 	}
 
 	req, err := p.buildRequest(ctx, body, endpoint)
