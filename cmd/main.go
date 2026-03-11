@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/macedot/openmodel/internal/api/anthropic"
 	"github.com/macedot/openmodel/internal/api/openai"
 	"github.com/macedot/openmodel/internal/config"
 	"github.com/macedot/openmodel/internal/logger"
@@ -525,17 +526,18 @@ func runTests(providers map[string]provider.Provider, cfg *config.Config, modelN
 			continue
 		}
 
+		baseURL := prov.BaseURL()
 		for _, model := range provConfig.Models {
-			logger.Info("Testing provider model", "provider", provName, "model", model)
+			logger.Info("Testing provider model", "provider", provName, "model", model, "url", baseURL, "endpoint", "/chat/completions")
 
 			// Test Chat with "hi" message
 			chatResult := testChatModel(ctx, prov, model)
 
 			if chatResult.Success {
-				logger.Info("Test passed", "provider", provName, "model", model, "latency", chatResult.Latency)
+				logger.Info("Test passed", "provider", provName, "model", model, "url", baseURL, "endpoint", "/chat/completions", "latency", chatResult.Latency)
 			} else {
 				failed++
-				logger.Error("Test failed", "provider", provName, "model", model, "error", chatResult.Error)
+				logger.Error("Test failed", "provider", provName, "model", model, "url", baseURL, "endpoint", "/chat/completions", "error", chatResult.Error)
 			}
 		}
 	}
@@ -626,17 +628,20 @@ func runBench(promptFile, scope string, stream bool) {
 
 // benchResult holds the result of a single benchmark run
 type benchResult struct {
-	Type       string `json:"type"`
-	Provider   string `json:"provider"`
-	Model      string `json:"model"`
-	ProviderID string `json:"provider_id,omitempty"`
-	Strategy   string `json:"strategy,omitempty"`
-	Prompt     string `json:"prompt,omitempty"`
-	Error      string `json:"error,omitempty"`
-	Response   string `json:"response,omitempty"`
-	Duration   string `json:"duration"`
-	Stream     bool   `json:"stream"`
-	Tokens     *benchTokens `json:"tokens,omitempty"`
+	Type        string `json:"type"`
+	Provider    string `json:"provider"`
+	Model       string `json:"model"`
+	ProviderID  string `json:"provider_id,omitempty"`
+	Strategy    string `json:"strategy,omitempty"`
+	ApiMode     string `json:"api_mode,omitempty"`
+	URL         string `json:"url"`
+	Endpoint    string `json:"endpoint"`
+	Prompt      string `json:"prompt,omitempty"`
+	Error       string `json:"error,omitempty"`
+	Response    string `json:"response,omitempty"`
+	Duration    string `json:"duration"`
+	Stream      bool   `json:"stream"`
+	Tokens      *benchTokens `json:"tokens,omitempty"`
 	TokensPerSec float64 `json:"tokens_per_sec,omitempty"`
 }
 
@@ -651,8 +656,9 @@ func writeBenchResult(result benchResult) {
 	// Sanitize provider and model names for filename
 	sanitizedProvider := sanitizeBenchName(result.Provider)
 	sanitizedModel := sanitizeBenchName(result.Model)
+	sanitizedEndpoint := sanitizeBenchName(result.Endpoint)
 
-	filename := fmt.Sprintf("%d-bench-%s-%s.json", time.Now().UnixNano(), sanitizedProvider, sanitizedModel)
+	filename := fmt.Sprintf("%d-bench-%s-%s-%s.json", time.Now().UnixNano(), sanitizedProvider, sanitizedModel, sanitizedEndpoint)
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error marshaling benchmark result: %v\n", err)
@@ -685,17 +691,16 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 			continue
 		}
 
-		startTime := time.Now()
-
 		// Get first available provider from the chain
 		prov, providerKey, providerModel, err := findFirstAvailableProvider(cfg, providers, modelConfig)
-
 		if err != nil {
+			startTime := time.Now()
 			result := benchResult{
 				Type:     "error",
 				Provider: modelName,
 				Model:    modelName,
 				Strategy: modelConfig.Strategy,
+				ApiMode:  modelConfig.ApiMode,
 				Prompt:   truncate(strings.TrimSpace(messages[0].Content), 100),
 				Error:    err.Error(),
 				Duration: time.Since(startTime).String(),
@@ -705,50 +710,86 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 			continue
 		}
 
-		// Make the request
-		resp, err := benchChat(ctx, prov, providerModel, messages, stream)
-		duration := time.Since(startTime)
+		// Determine which endpoints to test based on api_mode
+		endpoints := getEndpointsForApiMode(modelConfig.ApiMode)
+		baseURL := prov.BaseURL()
 
-		if err != nil {
+		for _, endpoint := range endpoints {
+			startTime := time.Now()
+
+			var resp *benchResponse
+			var benchErr error
+
+			if endpoint == "/chat/completions" {
+				// OpenAI endpoint
+				resp, benchErr = benchChat(ctx, prov, providerModel, messages, stream)
+			} else {
+				// Anthropic endpoint - convert and use raw request
+				resp, benchErr = benchAnthropicEndpoint(ctx, prov, providerModel, messages, stream)
+			}
+
+			duration := time.Since(startTime)
+
+			if benchErr != nil {
+				result := benchResult{
+					Type:       "error",
+					Provider:   modelName,
+					Model:      modelName,
+					ProviderID: providerKey,
+					Strategy:   modelConfig.Strategy,
+					ApiMode:    modelConfig.ApiMode,
+					URL:        baseURL,
+					Endpoint:   endpoint,
+					Prompt:     truncate(strings.TrimSpace(messages[0].Content), 100),
+					Error:      benchErr.Error(),
+					Duration:   duration.String(),
+					Stream:     stream,
+				}
+				writeBenchResult(result)
+				continue
+			}
+
 			result := benchResult{
-				Type:       "error",
+				Type:       "response",
 				Provider:   modelName,
 				Model:      modelName,
 				ProviderID: providerKey,
 				Strategy:   modelConfig.Strategy,
+				ApiMode:    modelConfig.ApiMode,
+				URL:        baseURL,
+				Endpoint:   endpoint,
 				Prompt:     truncate(strings.TrimSpace(messages[0].Content), 100),
-				Error:      err.Error(),
+				Response:   resp.Content,
 				Duration:   duration.String(),
 				Stream:     stream,
 			}
+
+			if resp.TotalTokens > 0 {
+				result.Tokens = &benchTokens{
+					Prompt:     resp.PromptTokens,
+					Completion: resp.CompletionTokens,
+					Total:      resp.TotalTokens,
+				}
+				if resp.PromptTokens > 0 {
+					result.TokensPerSec = float64(resp.CompletionTokens) / duration.Seconds()
+				}
+			}
+
 			writeBenchResult(result)
-			continue
 		}
+	}
+}
 
-		result := benchResult{
-			Type:       "response",
-			Provider:   modelName,
-			Model:      modelName,
-			ProviderID: providerKey,
-			Strategy:   modelConfig.Strategy,
-			Prompt:     truncate(strings.TrimSpace(messages[0].Content), 100),
-			Response:   resp.Content,
-			Duration:   duration.String(),
-			Stream:     stream,
-		}
-
-		if resp.TotalTokens > 0 {
-			result.Tokens = &benchTokens{
-				Prompt:     resp.PromptTokens,
-				Completion: resp.CompletionTokens,
-				Total:      resp.TotalTokens,
-			}
-			if resp.PromptTokens > 0 {
-				result.TokensPerSec = float64(resp.CompletionTokens) / duration.Seconds()
-			}
-		}
-
-		writeBenchResult(result)
+// getEndpointsForApiMode returns the endpoints to test based on api_mode
+func getEndpointsForApiMode(apiMode string) []string {
+	switch apiMode {
+	case "openai":
+		return []string{"/chat/completions"}
+	case "anthropic":
+		return []string{"/v1/messages"}
+	default:
+		// Empty or unknown: test both endpoints
+		return []string{"/chat/completions", "/v1/messages"}
 	}
 }
 
@@ -813,6 +854,123 @@ func benchChatStream(ctx context.Context, prov provider.Provider, model string, 
 	}, nil
 }
 
+// benchAnthropicEndpoint performs a request using Anthropic format to /v1/messages endpoint
+func benchAnthropicEndpoint(ctx context.Context, prov provider.Provider, model string, messages []openai.ChatCompletionMessage, stream bool) (*benchResponse, error) {
+	// Convert OpenAI messages to Anthropic format
+	req := &openai.ChatCompletionRequest{
+		Model:    model,
+		Messages: messages,
+		Stream:   stream,
+	}
+	anthropicReq := anthropic.OpenAIToAnthropicRequest(req)
+
+	// Marshal the Anthropic request
+	body, err := json.Marshal(anthropicReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Anthropic request: %w", err)
+	}
+
+	// Set headers for Anthropic API
+	headers := map[string]string{
+		"anthropic-version": "2023-06-01",
+	}
+
+	if stream {
+		return benchAnthropicStream(ctx, prov, body, headers, model)
+	}
+	return benchAnthropicNonStream(ctx, prov, body, headers, model)
+}
+
+// benchAnthropicNonStream performs a non-streaming Anthropic request
+func benchAnthropicNonStream(ctx context.Context, prov provider.Provider, body []byte, headers map[string]string, model string) (*benchResponse, error) {
+	respBody, err := prov.DoRequest(ctx, "/v1/messages", body, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse Anthropic response
+	var anthropicResp anthropic.MessagesResponse
+	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
+		return nil, fmt.Errorf("failed to parse Anthropic response: %w", err)
+	}
+
+	// Convert to OpenAI format for consistent handling
+	openaiResp := anthropic.AnthropicToOpenAIResponse(&anthropicResp)
+
+	return &benchResponse{
+		Content:          openaiResp.Choices[0].Message.Content,
+		PromptTokens:     openaiResp.Usage.PromptTokens,
+		CompletionTokens: openaiResp.Usage.CompletionTokens,
+		TotalTokens:      openaiResp.Usage.TotalTokens,
+	}, nil
+}
+
+// benchAnthropicStream performs a streaming Anthropic request
+func benchAnthropicStream(ctx context.Context, prov provider.Provider, body []byte, headers map[string]string, model string) (*benchResponse, error) {
+	ch, err := prov.DoStreamRequest(ctx, "/v1/messages", body, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	var content strings.Builder
+	var promptTokens, completionTokens, totalTokens int
+
+	for line := range ch {
+		// Parse SSE line
+		lineStr := string(line)
+		if !strings.HasPrefix(lineStr, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(lineStr, "data: ")
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+
+		// Parse the Anthropic event
+		var event struct {
+			Type    string `json:"type"`
+			Index   int    `json:"index"`
+			Delta   struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"delta"`
+			Message *anthropic.MessagesResponse `json:"message"`
+			Usage   struct {
+				InputTokens  int `json:"input_tokens"`
+				OutputTokens int `json:"output_tokens"`
+			} `json:"usage"`
+		}
+
+		if err := json.Unmarshal([]byte(data), &event); err != nil {
+			continue
+		}
+
+		// Handle different event types
+		switch event.Type {
+		case "content_block_delta":
+			if event.Delta.Type == "text_delta" {
+				content.WriteString(event.Delta.Text)
+			}
+		case "message_start":
+			if event.Message != nil {
+				promptTokens = event.Message.Usage.InputTokens
+			}
+		case "message_delta":
+			completionTokens = event.Usage.OutputTokens
+		case "message_stop":
+			// Message complete
+			totalTokens = promptTokens + completionTokens
+		}
+	}
+
+	return &benchResponse{
+		Content:          content.String(),
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      totalTokens,
+	}, nil
+}
+
 // findFirstAvailableProvider returns the first provider in the chain that is available
 func findFirstAvailableProvider(cfg *config.Config, providers map[string]provider.Provider, modelConfig config.ModelConfig) (provider.Provider, string, string, error) {
 	for _, mp := range modelConfig.Providers {
@@ -842,6 +1000,8 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 			continue
 		}
 
+		baseURL := prov.BaseURL()
+
 		// Sort model names for consistent output
 		models := make([]string, len(provConfig.Models))
 		copy(models, provConfig.Models)
@@ -858,6 +1018,8 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 					Type:     "error",
 					Provider: providerName,
 					Model:    modelName,
+					URL:      baseURL,
+					Endpoint: "/chat/completions",
 					Prompt:   truncate(strings.TrimSpace(messages[0].Content), 100),
 					Error:    err.Error(),
 					Duration: duration.String(),
@@ -871,6 +1033,8 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 				Type:     "response",
 				Provider: providerName,
 				Model:    modelName,
+				URL:      baseURL,
+				Endpoint: "/chat/completions",
 				Prompt:   truncate(strings.TrimSpace(messages[0].Content), 100),
 				Response: resp.Content,
 				Duration: duration.String(),

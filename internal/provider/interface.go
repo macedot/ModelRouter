@@ -41,10 +41,16 @@ type CompletionProvider interface {
 	StreamComplete(ctx context.Context, model string, req *openai.CompletionRequest) (<-chan openai.CompletionResponse, error)
 }
 
+// URLProvider provides access to the provider's base URL
+type URLProvider interface {
+	BaseURL() string
+}
+
 // Provider is the full interface combining all capabilities.
 // Kept for backward compatibility - OpenAIProvider implements this.
 type Provider interface {
 	Name() string
+	URLProvider
 	ModelLister
 	ChatProvider
 	RawRequester

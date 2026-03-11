@@ -71,3 +71,8 @@ func NewOpenAIProviderWithConfig(name, baseURL, apiKey string, httpConfig HTTPCo
 func (p *OpenAIProvider) Name() string {
 	return p.name
 }
+
+// BaseURL returns the provider base URL
+func (p *OpenAIProvider) BaseURL() string {
+	return p.baseURL
+}
