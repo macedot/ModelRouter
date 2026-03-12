@@ -548,7 +548,7 @@ func writeBenchResult(result benchResult) {
 	sanitizedModel := sanitizeBenchName(result.Model)
 	sanitizedEndpoint := sanitizeBenchName(result.Endpoint)
 
-	filename := fmt.Sprintf("%d-bench-%s-%s-%s.json", time.Now().UnixNano(), sanitizedProvider, sanitizedModel, sanitizedEndpoint)
+	filename := fmt.Sprintf("bench-%d-%s-%s-%s.json", time.Now().UnixNano(), sanitizedProvider, sanitizedModel, sanitizedEndpoint)
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error marshaling benchmark result: %v\n", err)
@@ -901,6 +901,8 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 		}
 
 		baseURL := prov.BaseURL()
+		apiMode := prov.APIMode()
+		testEndpoints := getEndpointsForApiMode(apiMode)
 
 		// Sort model names for consistent output
 		models := make([]string, len(provConfig.Models))
@@ -908,61 +910,75 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 		sort.Strings(models)
 
 		for _, modelName := range models {
-			startTime := time.Now()
+			for _, endpoint := range testEndpoints {
+				startTime := time.Now()
 
-			logger.Info("Benchmarking provider model",
-				"provider", providerName,
-				"model", modelName,
-				"url", baseURL,
-				"endpoint", endpoints.V1ChatCompletions,
-				"stream", stream)
+				logger.Info("Benchmarking provider model",
+					"provider", providerName,
+					"model", modelName,
+					"url", baseURL,
+					"endpoint", endpoint,
+					"api_mode", apiMode,
+					"stream", stream)
 
-			resp, err := benchChat(ctx, prov, modelName, messages, stream)
-			duration := time.Since(startTime)
+				var resp *benchResponse
+				var benchErr error
 
-			if err != nil {
+				if endpoint == endpoints.V1ChatCompletions {
+					resp, benchErr = benchChat(ctx, prov, modelName, messages, stream)
+				} else {
+					resp, benchErr = benchAnthropicEndpoint(ctx, prov, modelName, messages, stream)
+				}
+
+				duration := time.Since(startTime)
+
+				if benchErr != nil {
+					result := benchResult{
+						Type:       "error",
+						Provider:   providerName,
+						Model:      modelName,
+						ApiMode:    apiMode,
+						URL:        baseURL,
+						Endpoint:   endpoint,
+						Prompt:     strings.TrimSpace(messages[0].Content),
+						Error:      benchErr.Error(),
+						Duration:   duration.String(),
+						Stream:     stream,
+					}
+					writeBenchResult(result)
+					continue
+				}
+
 				result := benchResult{
-					Type:     "error",
-					Provider: providerName,
-					Model:    modelName,
-					URL:      baseURL,
-					Endpoint: endpoints.V1ChatCompletions,
-					Prompt:   strings.TrimSpace(messages[0].Content),
-					Error:    err.Error(),
-					Duration: duration.String(),
-					Stream:   stream,
+					Type:       "response",
+					Provider:   providerName,
+					Model:      modelName,
+					ApiMode:    apiMode,
+					URL:        baseURL,
+					Endpoint:   endpoint,
+					Prompt:     strings.TrimSpace(messages[0].Content),
+					Response:   resp.Content,
+					Duration:   duration.String(),
+					Stream:     stream,
 				}
+
+				if resp.TotalTokens > 0 {
+					result.Tokens = &benchTokens{
+						Prompt:     resp.PromptTokens,
+						Completion: resp.CompletionTokens,
+						Total:      resp.TotalTokens,
+					}
+					if resp.PromptTokens > 0 {
+						result.TokensPerSec = float64(resp.CompletionTokens) / duration.Seconds()
+					}
+				}
+
 				writeBenchResult(result)
-				continue
 			}
-
-			result := benchResult{
-				Type:     "response",
-				Provider: providerName,
-				Model:    modelName,
-				URL:      baseURL,
-				Endpoint: endpoints.V1ChatCompletions,
-				Prompt:   strings.TrimSpace(messages[0].Content),
-				Response: resp.Content,
-				Duration: duration.String(),
-				Stream:   stream,
-			}
-
-			if resp.TotalTokens > 0 {
-				result.Tokens = &benchTokens{
-					Prompt:     resp.PromptTokens,
-					Completion: resp.CompletionTokens,
-					Total:      resp.TotalTokens,
-				}
-				if resp.PromptTokens > 0 {
-					result.TokensPerSec = float64(resp.CompletionTokens) / duration.Seconds()
-				}
-			}
-
-			writeBenchResult(result)
 		}
 	}
 }
+
 
 // formatProviders formats a slice of ModelProvider for display
 func formatProviders(providers []config.ModelProvider) string {

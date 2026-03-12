@@ -320,6 +320,17 @@ trace-*.json
 
 These files are prefixed with `trace-` and contain detailed information about operations.
 
+### Benchmark Files
+
+When running benchmarks (`openmodel bench`), results are saved to JSON files:
+
+```
+bench-1731234567890123456-provider-model-endpoint.json
+bench-*.json
+```
+
+These files contain timing, token counts, and response data for each benchmark run.
+
 
 ## Testing Patterns
 

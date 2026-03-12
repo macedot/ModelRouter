@@ -70,6 +70,12 @@ func (m *mockProvider) DoStreamRequest(ctx interface{}, endpoint string, body []
 	return nil, nil
 }
 
+func (m *mockProvider) Close() error { return nil }
+
+func (m *mockProvider) BaseURL() string { return "" }
+
+func (m *mockProvider) APIMode() string { return "openai" }
+
 // TestHandleError tests the error response helper
 func TestHandleError(t *testing.T) {
 	app := fiber.New()

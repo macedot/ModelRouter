@@ -31,4 +31,6 @@ openmodel.json
 
 # Trace files (committed for debugging)
 trace-*.json
-trace-*.json
+
+# Benchmark files
+bench-*.json
