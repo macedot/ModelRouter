@@ -1,11 +1,14 @@
 from openai import OpenAI
+from dotenv import load_dotenv
+from os import getenv
+load_dotenv()
 client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
-    api_key="$NVIDIA_API_KEY"
+    api_key=getenv("API_KEY_NVIDIA")
 )
 completion = client.chat.completions.create(
     model="nvidia/nemotron-3-super-120b-a12b",
-    messages=[{"role": "user", "content": ""}],
+    messages=[{"role": "user", "content": "Write a 100 words history about pirates and computer in the space"}],
     temperature=1,
     top_p=0.95,
     max_tokens=16384,

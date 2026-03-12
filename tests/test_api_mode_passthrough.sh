@@ -8,9 +8,9 @@ echo "Request: POST /v1/chat/completions with model 'default'"
 time curl -v -s http://127.0.0.1:${PORT}/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{
-        "model": "default",
+        "model": "openai",
         "max_tokens": 300,
-        "messages": [{"role": "user", "content": "Say hello"}]
+        "messages": [{"role": "user", "content": "Write a 100 words history about pirates and computer in the space"}]
     }'
 echo ""
 echo ""
@@ -21,7 +21,7 @@ time curl -v -s http://127.0.0.1:${PORT}/v1/messages \
     -H "Content-Type: application/json" \
     -H "anthropic-version: 2023-06-01" \
     -d '{
-        "model": "default",
+        "model": "anthropic",
         "max_tokens": 300,
-        "messages": [{"role": "user", "content": "Say hello"}]
+        "messages": [{"role": "user", "content": "Write a 100 words history about pirates and computer in the space"}]
     }'

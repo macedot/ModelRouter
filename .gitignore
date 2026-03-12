@@ -26,3 +26,5 @@ openmodel.json
 
 # Debug files
 .openmodel_debug/
+
+**/.env
