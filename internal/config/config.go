@@ -209,11 +209,12 @@ type ProviderModel string
 
 // ParseProviderModel parses a "provider/model" string into a ModelProvider
 func ParseProviderModel(pm ProviderModel) (ModelProvider, error) {
+	// Use / as separator: provider/model (model can contain /)
 	parts := strings.Split(string(pm), "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
 		return ModelProvider{}, fmt.Errorf("invalid provider model format: %q (expected 'provider/model')", pm)
 	}
-	return ModelProvider{Provider: parts[0], Model: parts[1]}, nil
+	return ModelProvider{Provider: parts[0], Model: strings.Join(parts[1:], "/")}, nil
 }
 
 // parseModelEntries parses model entries from an array of raw values
@@ -223,6 +224,8 @@ func parseModelEntries(cfg *Config, modelName string, entries []any, visited map
 		switch v := entry.(type) {
 		case string:
 			// Check if it's "provider/model" format or an "own model"
+			// Check if it's "provider@model" format (or "provider/model" legacy) or an "own model"
+			// Check if it's "provider/model" format (model can contain /) or an "own model"
 			if strings.Contains(v, "/") {
 				// It's "provider/model" format
 				mp, err := ParseProviderModel(ProviderModel(v))

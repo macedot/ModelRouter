@@ -52,6 +52,7 @@ func newBenchFlagSet() *flag.FlagSet {
 	fs := flag.NewFlagSet("bench", flag.ExitOnError)
 	fs.String("prompt", "", "Prompt text to send (required)")
 	fs.String("scope", "application", "Scope: application, providers, or all")
+	fs.String("model", "", "Filter: only benchmark specific model")
 	fs.Bool("stream", false, "Use streaming mode for requests")
 	return fs
 }
@@ -477,6 +478,7 @@ func runBenchCmd(args []string) {
 
 	promptStr := fs.Lookup("prompt").Value.String()
 	scope := fs.Lookup("scope").Value.String()
+	model := fs.Lookup("model").Value.String()
 	stream := fs.Lookup("stream").Value.(flag.Getter).Get().(bool)
 
 	if promptStr == "" {
@@ -484,11 +486,11 @@ func runBenchCmd(args []string) {
 		fs.Usage()
 		os.Exit(1)
 	}
-	runBench(promptStr, scope, stream)
+	runBench(promptStr, scope, stream, model)
 }
 
 // runBench executes benchmark tests based on scope mode
-func runBench(promptStr, scope string, stream bool) {
+func runBench(promptStr, scope string, stream bool, model string) {
 	cfg := loadAndValidateConfig("")
 
 	// Trim prompt
@@ -506,12 +508,12 @@ func runBench(promptStr, scope string, stream bool) {
 	// Run benchmarks based on scope
 	switch scope {
 	case "application", "app":
-		runBenchApplication(ctx, cfg, providers, messages, stream)
+		runBenchApplication(ctx, cfg, providers, messages, stream, model)
 	case "providers":
-		runBenchProviders(ctx, cfg, providers, messages, stream)
+		runBenchProviders(ctx, cfg, providers, messages, stream, model)
 	case "all":
-		runBenchApplication(ctx, cfg, providers, messages, stream)
-		runBenchProviders(ctx, cfg, providers, messages, stream)
+		runBenchApplication(ctx, cfg, providers, messages, stream, model)
+		runBenchProviders(ctx, cfg, providers, messages, stream, model)
 	default:
 		fmt.Fprintf(os.Stderr, "Error: invalid scope '%s'. Use: application, providers, or all\n", scope)
 		os.Exit(1)
@@ -590,13 +592,17 @@ func parseStatusCodeFromError(errStr string) int {
 }
 
 // runBenchApplication tests each configured model alias using its failover chain
-func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[string]provider.Provider, messages []openai.ChatCompletionMessage, stream bool) {
+func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[string]provider.Provider, messages []openai.ChatCompletionMessage, stream bool, modelFilter string) {
 	for _, modelName := range cfg.ModelOrder {
+		// Skip models not matching filter
+		if modelFilter != "" && modelFilter != modelName {
+			continue
+		}
+
 		modelConfig, exists := cfg.Models[modelName]
 		if !exists {
 			continue
 		}
-
 		// Get first available provider from the chain
 		prov, providerKey, providerModel, err := findFirstAvailableProvider(cfg, providers, modelConfig)
 		if err != nil {
@@ -906,7 +912,7 @@ func findFirstAvailableProvider(cfg *config.Config, providers map[string]provide
 }
 
 // runBenchProviders tests every model on every provider individually
-func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[string]provider.Provider, messages []openai.ChatCompletionMessage, stream bool) {
+func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[string]provider.Provider, messages []openai.ChatCompletionMessage, stream bool, modelFilter string) {
 	// Sort provider names for consistent output
 	var providerNames []string
 	for name := range cfg.Providers {
@@ -931,6 +937,10 @@ func runBenchProviders(ctx context.Context, cfg *config.Config, providers map[st
 		sort.Strings(models)
 
 		for _, modelName := range models {
+			// Skip models not matching filter
+			if modelFilter != "" && modelFilter != providerName+"/"+modelName && modelFilter != modelName {
+				continue
+			}
 			for _, endpoint := range testEndpoints {
 				startTime := time.Now()
 

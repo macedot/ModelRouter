@@ -580,7 +580,7 @@ func TestModelValidation(t *testing.T) {
 			"models": {
 				"my-model": {
 					"strategy": "fallback",
-					"providers": ["test/model1"]
+				"providers": ["test/model1"]
 				}
 			},
 			"log_level": "info",
@@ -613,7 +613,7 @@ func TestModelValidation(t *testing.T) {
 			"models": {
 				"my-model": {
 					"strategy": "fallback",
-					"providers": ["unknown/model1"]
+				"providers": ["unknown/model1"]
 				}
 			},
 			"log_level": "info",
@@ -644,7 +644,7 @@ func TestModelValidation(t *testing.T) {
 			"models": {
 				"my-model": {
 					"strategy": "fallback",
-					"providers": ["test/nonexistent"]
+				"providers": ["test/nonexistent"]
 				}
 			},
 			"log_level": "info",
@@ -738,7 +738,7 @@ func TestModelValidation(t *testing.T) {
 			"models": {
 				"my-model": {
 					"strategy": "fallback",
-					"providers": ["test/any-model"]
+				"providers": ["test/any-model"]
 				}
 			},
 			"log_level": "info",

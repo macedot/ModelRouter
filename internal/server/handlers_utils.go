@@ -13,7 +13,6 @@ import (
 func formatProviderKey(p config.ModelProvider) string {
 	return fmt.Sprintf("%s/%s", p.Provider, p.Model)
 }
-
 // handleError writes an error response
 func handleError(c *fiber.Ctx, message string, statusCode int) error {
 	return c.Status(statusCode).JSON(fiber.Map{"error": message})
