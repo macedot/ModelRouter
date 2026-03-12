@@ -131,7 +131,7 @@ func (c *Config) GetLimits() LimitsConfig {
 	if c.Limits.MaxRequestBodyBytes == 0 {
 		// Return defaults
 		return LimitsConfig{
-			MaxRequestBodyBytes:  50 * 1024 * 1024, // 50MB
+			MaxRequestBodyBytes:  1 * 1024 * 1024,  // 1MB
 			MaxResponseBodyBytes: 1 * 1024 * 1024,  // 1MB
 			MaxStreamBufferBytes: 1 * 1024 * 1024,  // 1MB
 		}
@@ -469,7 +469,7 @@ func DefaultConfig() *Config {
 			ResponseHeaderTimeoutSeconds: 30,
 		},
 		Limits: LimitsConfig{
-			MaxRequestBodyBytes:  50 * 1024 * 1024, // 50MB
+		MaxRequestBodyBytes:  1 * 1024 * 1024, // 1MB
 			MaxResponseBodyBytes: 1 * 1024 * 1024,  // 1MB
 			MaxStreamBufferBytes: 1 * 1024 * 1024,  // 1MB
 		},

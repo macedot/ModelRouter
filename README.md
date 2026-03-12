@@ -190,7 +190,7 @@ Create `~/.config/openmodel/openmodel.json`:
 | | `trusted_proxies` | Trusted proxy IP ranges (CIDR) | [] |
 | **HTTP** | `timeout_seconds` | Request timeout | 120 |
 | | `max_idle_conns` | Maximum idle connections | 100 |
-| **Limits** | `max_request_body_bytes` | Max request body (50MB) | 52428800 |
+| **Limits** | `max_request_body_bytes` | Max request body (1MB) | 1048576 |
 | | `max_response_body_bytes` | Max response body (1MB) | 1048576 |
 | | `max_stream_buffer_bytes` | Max stream buffer (1MB) | 1048576 |
 

@@ -289,8 +289,9 @@
         "max_request_body_bytes": {
           "type": "integer",
           "minimum": 0,
-          "default": 52428800,
-          "description": "Maximum request body size in bytes (default: 50MB)"
+          "default": 1048576,
+          "description": "Maximum request body size in bytes (default: 1MB)"
+
         },
         "max_response_body_bytes": {
           "type": "integer",
