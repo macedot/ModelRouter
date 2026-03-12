@@ -124,8 +124,8 @@ func initProviders(cfg *config.Config) map[string]provider.Provider {
 	}
 
 	for name, pc := range cfg.Providers {
-		providers[name] = provider.NewOpenAIProviderWithConfig(name, pc.URL, pc.APIKey, httpConfig)
-		logger.Info("Provider initialized", "name", name, "url", pc.URL)
+		providers[name] = provider.NewOpenAIProviderWithConfig(name, pc.URL, pc.APIKey, pc.ApiMode, httpConfig)
+		logger.Info("Provider initialized", "name", name, "url", pc.URL, "api_mode", pc.ApiMode)
 	}
 	return providers
 }
@@ -538,7 +538,7 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 				Provider: modelName,
 				Model:    modelName,
 				Strategy: modelConfig.Strategy,
-				ApiMode:  modelConfig.ApiMode,
+				ApiMode:  "",
 				Prompt:   strings.TrimSpace(messages[0].Content),
 				Error:    err.Error(),
 				Duration: time.Since(startTime).String(),
@@ -548,8 +548,11 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 			continue
 		}
 
+		// Get api_mode from provider
+		apiMode := prov.APIMode()
+
 		// Determine which endpoints to test based on api_mode
-		testEndpoints := getEndpointsForApiMode(modelConfig.ApiMode)
+		testEndpoints := getEndpointsForApiMode(apiMode)
 		baseURL := prov.BaseURL()
 
 		for _, endpoint := range testEndpoints {
@@ -582,7 +585,7 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 					Model:      modelName,
 					ProviderID: providerKey,
 					Strategy:   modelConfig.Strategy,
-					ApiMode:    modelConfig.ApiMode,
+					ApiMode:    apiMode,
 					URL:        baseURL,
 					Endpoint:   endpoint,
 					Prompt:     strings.TrimSpace(messages[0].Content),
@@ -600,7 +603,7 @@ func runBenchApplication(ctx context.Context, cfg *config.Config, providers map[
 				Model:      modelName,
 				ProviderID: providerKey,
 				Strategy:   modelConfig.Strategy,
-				ApiMode:    modelConfig.ApiMode,
+				ApiMode:    apiMode,
 				URL:        baseURL,
 				Endpoint:   endpoint,
 				Prompt:     strings.TrimSpace(messages[0].Content),

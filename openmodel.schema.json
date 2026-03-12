@@ -40,6 +40,12 @@
             "type": "string",
             "description": "API key for authentication (supports ${VAR} expansion)"
           },
+          "api_mode": {
+            "type": "string",
+            "enum": ["openai", "anthropic", ""],
+            "default": "",
+            "description": "API format: 'openai' for OpenAI format, 'anthropic' for Anthropic format, empty for passthrough (uses the same endpoint as received)"
+          },
           "models": {
             "type": "array",
             "items": {
@@ -120,12 +126,6 @@
                 "enum": ["fallback", "round-robin", "random"],
                 "default": "fallback",
                 "description": "Selection strategy for this model"
-              },
-              "api_mode": {
-                "type": "string",
-                "enum": ["openai", "anthropic", ""],
-                "default": "",
-                "description": "API format conversion mode: 'openai' for OpenAI format, 'anthropic' for Anthropic format, empty for passthrough"
               },
               "default": {
                 "type": "boolean",

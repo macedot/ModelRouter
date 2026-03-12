@@ -13,6 +13,7 @@ type OpenAIProvider struct {
 	name       string
 	baseURL    string
 	apiKey     string
+	apiMode    string
 	httpClient *http.Client
 }
 
@@ -41,16 +42,17 @@ func DefaultHTTPConfig() HTTPConfig {
 }
 
 // NewOpenAIProvider creates a new OpenAI-compatible provider
-func NewOpenAIProvider(name, baseURL, apiKey string) *OpenAIProvider {
-	return NewOpenAIProviderWithConfig(name, baseURL, apiKey, DefaultHTTPConfig())
+func NewOpenAIProvider(name, baseURL, apiKey, apiMode string) *OpenAIProvider {
+	return NewOpenAIProviderWithConfig(name, baseURL, apiKey, apiMode, DefaultHTTPConfig())
 }
 
 // NewOpenAIProviderWithConfig creates a new OpenAI-compatible provider with custom HTTP config
-func NewOpenAIProviderWithConfig(name, baseURL, apiKey string, httpConfig HTTPConfig) *OpenAIProvider {
+func NewOpenAIProviderWithConfig(name, baseURL, apiKey, apiMode string, httpConfig HTTPConfig) *OpenAIProvider {
 	return &OpenAIProvider{
 		name:    name,
 		baseURL: strings.TrimSuffix(baseURL, "/"),
 		apiKey:  apiKey,
+		apiMode: apiMode,
 		httpClient: &http.Client{
 			Timeout: time.Duration(httpConfig.TimeoutSeconds) * time.Second,
 			Transport: &http.Transport{
@@ -75,4 +77,9 @@ func (p *OpenAIProvider) Name() string {
 // BaseURL returns the provider base URL
 func (p *OpenAIProvider) BaseURL() string {
 	return p.baseURL
+}
+
+// APIMode returns the provider's API mode ("openai" or "anthropic")
+func (p *OpenAIProvider) APIMode() string {
+	return p.apiMode
 }

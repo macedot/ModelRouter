@@ -46,11 +46,17 @@ type URLProvider interface {
 	BaseURL() string
 }
 
+// APIModeProvider provides access to the provider's API mode
+type APIModeProvider interface {
+	APIMode() string
+}
+
 // Provider is the full interface combining all capabilities.
 // Kept for backward compatibility - OpenAIProvider implements this.
 type Provider interface {
 	Name() string
 	URLProvider
+	APIModeProvider
 	ModelLister
 	ChatProvider
 	RawRequester

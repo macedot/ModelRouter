@@ -143,8 +143,7 @@ func (c *Config) GetLimits() LimitsConfig {
 // ModelConfig holds configuration for a model alias
 type ModelConfig struct {
 	Strategy  string          `json:"strategy"`  // "fallback" | "round-robin" | "random", default "fallback"
-	Default   bool            `json:"default"`   // If true, this model is the default when no model is specified
-	ApiMode   string          `json:"api_mode"`  // "openai" | "anthropic" | "" (empty = passthrough)
+	Default   bool            `json:"default"`  // If true, this model is the default when no model is specified
 	Providers []ModelProvider `json:"providers"` // Resolved model providers
 }
 
@@ -194,8 +193,9 @@ type ServerConfig struct {
 // ProviderConfig holds provider connection settings
 type ProviderConfig struct {
 	URL        string            `json:"url"`        // Base URL for the provider (e.g., https://api.openai.com/v1)
-	APIKey     string            `json:"api_key"`     // API key (supports ${VAR} expansion)
-	Models     []string          `json:"models"`     // List of models available on this provider
+	APIKey     string            `json:"api_key"`   // API key (supports ${VAR} expansion)
+	ApiMode    string            `json:"api_mode"`  // API format: "openai" or "anthropic" (required)
+	Models     []string          `json:"models"`    // List of models available on this provider
 	Thresholds *ThresholdsConfig `json:"thresholds"` // Provider-specific thresholds (optional, defaults to global)
 }
 
@@ -814,9 +814,6 @@ func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 			if strategy, ok := v["strategy"].(string); ok && strategy != "" {
 				modelConfig.Strategy = strategy
 			}
-			if apiMode, ok := v["api_mode"].(string); ok {
-				modelConfig.ApiMode = apiMode
-			}
 			if defaultVal, ok := v["default"].(bool); ok {
 				modelConfig.Default = defaultVal
 			}
@@ -894,17 +891,17 @@ func (c *Config) ValidateDefaultModels() error {
 	return nil
 }
 
-// ValidateApiModes checks that all api_mode values are valid.
-// Returns an error if any model has an invalid api_mode.
+// ValidateApiModes checks that all provider api_mode values are valid.
+// Returns an error if any provider has an invalid api_mode (empty is allowed for passthrough).
 func (c *Config) ValidateApiModes() error {
 	validApiModes := map[string]bool{"": true, "openai": true, "anthropic": true}
 	var errs []string
 
-	for modelName, modelConfig := range c.Models {
-		if !validApiModes[modelConfig.ApiMode] {
+	for providerName, providerConfig := range c.Providers {
+		if !validApiModes[providerConfig.ApiMode] {
 			errs = append(errs, fmt.Sprintf(
-				"  model %q has invalid api_mode: %q (must be 'openai', 'anthropic', or empty)",
-				modelName, modelConfig.ApiMode))
+				"  provider %q has invalid api_mode: %q (must be 'openai', 'anthropic', or empty for passthrough)",
+				providerName, providerConfig.ApiMode))
 		}
 	}
 

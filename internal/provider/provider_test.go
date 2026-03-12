@@ -16,7 +16,7 @@ import (
 
 // newTestProvider creates a provider pointing to a test server
 func newTestProvider(serverURL string) *OpenAIProvider {
-	return NewOpenAIProvider("test", serverURL, "test-api-key")
+	return NewOpenAIProvider("test", serverURL, "test-api-key", "openai")
 }
 
 func TestListModels(t *testing.T) {
@@ -1458,7 +1458,7 @@ func TestEmbed(t *testing.T) {
 }
 
 func TestName(t *testing.T) {
-	provider := NewOpenAIProvider("custom-name", "http://localhost:8080", "api-key")
+	provider := NewOpenAIProvider("custom-name", "http://localhost:8080", "api-key", "openai")
 	if provider.Name() != "custom-name" {
 		t.Errorf("expected name custom-name, got %s", provider.Name())
 	}
@@ -1466,7 +1466,7 @@ func TestName(t *testing.T) {
 
 func TestBuildRequest(t *testing.T) {
 	t.Run("with API key", func(t *testing.T) {
-		provider := NewOpenAIProvider("test", "http://localhost:8080", "test-key")
+		provider := NewOpenAIProvider("test", "http://localhost:8080", "test-key", "openai")
 
 		body := []byte(`{"model":"gpt-4"}`)
 		ctx := context.Background()
@@ -1484,7 +1484,7 @@ func TestBuildRequest(t *testing.T) {
 	})
 
 	t.Run("without API key", func(t *testing.T) {
-		provider := NewOpenAIProvider("test", "http://localhost:8080", "")
+		provider := NewOpenAIProvider("test", "http://localhost:8080", "", "openai")
 
 		body := []byte(`{"model":"gpt-4"}`)
 		ctx := context.Background()
@@ -1499,7 +1499,7 @@ func TestBuildRequest(t *testing.T) {
 	})
 
 	t.Run("base URL trailing slash", func(t *testing.T) {
-		provider := NewOpenAIProvider("test", "http://localhost:8080/", "test-key")
+		provider := NewOpenAIProvider("test", "http://localhost:8080/", "test-key", "openai")
 
 		body := []byte(`{"model":"gpt-4"}`)
 		ctx := context.Background()
@@ -1524,7 +1524,7 @@ func TestDoRequest(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := NewOpenAIProvider("test", server.URL, "test-key")
+		provider := NewOpenAIProvider("test", server.URL, "test-key", "openai")
 		// Use very short timeout to trigger context cancellation
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer cancel()
