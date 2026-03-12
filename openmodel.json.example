@@ -7,6 +7,7 @@
   "providers": {
     "ollama": {
       "url": "http://127.0.0.1:11434/v1",
+      "api_mode": "openai",
       "models": [
         "glm-5:cloud",
         "minimax-m2.5:cloud"
@@ -14,10 +15,11 @@
     },
     "opencode": {
       "url": "https://opencode.ai/zen/v1",
+      "api_mode": "openai",
       "models": [
         "minimax-m2.5-free",
         "opencode/big-pickle",
-        "opencode/gpt-5-nano",
+        "opencode/gpt-5-nano"
       ]
     }
   },
@@ -28,20 +30,20 @@
         "opencode/minimax-m2.5-free",
         "opencode/big-pickle",
         "opencode/gpt-5-nano",
-        "ollama/glm-5:cloud",
+        "ollama/glm-5:cloud"
       ]
     },
     "glm-5": {
       "strategy": "fallback",
       "providers": [
-        "ollama/glm-5:cloud",
+        "ollama/glm-5:cloud"
       ]
     },
     "minimax-m2.5": {
       "strategy": "fallback",
       "providers": [
         "opencode/minimax-m2.5-free",
-        "ollama/minimax-m2.5:cloud",
+        "ollama/minimax-m2.5:cloud"
       ]
     }
   },
@@ -50,5 +52,5 @@
     "initial_timeout_ms": 10000,
     "max_timeout_ms": 300000
   },
-  "log_level": "debug",
+  "log_level": "debug"
 }

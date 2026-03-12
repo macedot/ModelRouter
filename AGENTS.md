@@ -224,6 +224,29 @@ internal/
   api/openai/               # OpenAI API types and validation
     generated/              # OpenAPI-generated types (do not edit)
   config/                   # Configuration loading and validation
+    watcher.go               # Hot reload watcher
+  endpoints/                # Endpoint utilities
+  logger/                   # Structured logging utilities
+  provider/                 # Provider abstraction interface
+  server/                   # HTTP server and handlers
+    constants.go            # Server constants
+    handlers.go             # Handler stubs/documentation
+    handlers_openai.go      # OpenAI endpoint handlers
+    handlers_claude.go      # Anthropic endpoint handlers
+    handlers_utils.go       # Handler utilities
+    failover.go             # Provider failover logic
+    streaming.go            # SSE streaming handling
+    server.go               # Server setup
+    ratelimit.go            # Rate limiting middleware
+    converters/              # Format converters (OpenAI ↔ Anthropic)
+  state/                    # State management
+```
+cmd/main.go                 # Entry point
+internal/
+  api/anthropic/            # Anthropic API types and validation
+  api/openai/               # OpenAI API types and validation
+    generated/              # OpenAPI-generated types (do not edit)
+  config/                   # Configuration loading and validation
   logger/                   # Structured logging utilities
   provider/                 # Provider abstraction interface
   server/                   # HTTP server and handlers
