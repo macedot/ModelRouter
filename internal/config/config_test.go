@@ -61,29 +61,8 @@ func TestDefaultConfig(t *testing.T) {
 			t.Errorf("expected log level debug, got %s", cfg.LogLevel)
 		}
 	})
-
-	t.Run("log format from environment", func(t *testing.T) {
-		orig := os.Getenv("OPENMODEL_LOG_FORMAT")
-		defer os.Setenv("OPENMODEL_LOG_FORMAT", orig)
-
-		os.Setenv("OPENMODEL_LOG_FORMAT", "json")
-		cfg := DefaultConfig()
-		if cfg.LogFormat != "json" {
-			t.Errorf("expected log format json, got %s", cfg.LogFormat)
-		}
-	})
-
-	t.Run("log format default is color", func(t *testing.T) {
-		orig := os.Getenv("OPENMODEL_LOG_FORMAT")
-		defer os.Setenv("OPENMODEL_LOG_FORMAT", orig)
-
-		os.Unsetenv("OPENMODEL_LOG_FORMAT")
-		cfg := DefaultConfig()
-		if cfg.LogFormat != "color" {
-			t.Errorf("expected default log format color, got %s", cfg.LogFormat)
-		}
-	})
 }
+
 
 // TestExpandEnvVars tests the expandEnvVars function
 func TestExpandEnvVars(t *testing.T) {
@@ -167,7 +146,6 @@ func TestLoadFromPath(t *testing.T) {
 			"providers": {"test": {"url": "http://localhost:8080/v1", "apiKey": ""}},
 			"models": {},
 			"log_level": "info",
-			"log_format": "text",
 			"thresholds": {"failures_before_switch": 5, "initial_timeout_ms": 5000, "max_timeout_ms": 60000}
 		}`
 		if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
@@ -201,7 +179,6 @@ func TestLoadFromPath(t *testing.T) {
 			"providers": {"test": {"url": "${TEST_PROVIDER_URL}", "apiKey": ""}},
 			"models": {},
 			"log_level": "info",
-			"log_format": "text",
 			"thresholds": {"failures_before_switch": 3, "initial_timeout_ms": 10000, "max_timeout_ms": 300000}
 		}`
 		if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
@@ -260,7 +237,6 @@ func TestLoadFromPath(t *testing.T) {
 func TestLoad(t *testing.T) {
 	origConfig := os.Getenv("OPENMODEL_CONFIG")
 	origLogLevel := os.Getenv("OPENMODEL_LOG_LEVEL")
-	origLogFormat := os.Getenv("OPENMODEL_LOG_FORMAT")
 	defer func() {
 		if origConfig != "" {
 			os.Setenv("OPENMODEL_CONFIG", origConfig)
@@ -272,16 +248,10 @@ func TestLoad(t *testing.T) {
 		} else {
 			os.Unsetenv("OPENMODEL_LOG_LEVEL")
 		}
-		if origLogFormat != "" {
-			os.Setenv("OPENMODEL_LOG_FORMAT", origLogFormat)
-		} else {
-			os.Unsetenv("OPENMODEL_LOG_FORMAT")
-		}
 	}()
 
 	os.Unsetenv("OPENMODEL_CONFIG")
 	os.Unsetenv("OPENMODEL_LOG_LEVEL")
-	os.Unsetenv("OPENMODEL_LOG_FORMAT")
 
 	t.Run("no config file returns defaults", func(t *testing.T) {
 		// Force nonexistent config path to test defaults
@@ -403,33 +373,6 @@ func TestGetLogLevel(t *testing.T) {
 	})
 }
 
-// TestGetLogFormat tests the getLogFormat function
-func TestGetLogFormat(t *testing.T) {
-	orig := os.Getenv("OPENMODEL_LOG_FORMAT")
-	defer func() {
-		if orig != "" {
-			os.Setenv("OPENMODEL_LOG_FORMAT", orig)
-		} else {
-			os.Unsetenv("OPENMODEL_LOG_FORMAT")
-		}
-	}()
-
-	t.Run("from environment", func(t *testing.T) {
-		os.Setenv("OPENMODEL_LOG_FORMAT", "json")
-		format := getLogFormat()
-		if format != "json" {
-			t.Errorf("getLogFormat() = %q, want json", format)
-		}
-	})
-
-	t.Run("default when not set", func(t *testing.T) {
-		os.Unsetenv("OPENMODEL_LOG_FORMAT")
-		format := getLogFormat()
-		if format != "color" {
-			t.Errorf("getLogFormat() = %q, want color", format)
-		}
-	})
-}
 
 // TestGetSchemaCompiler tests the getSchemaCompiler function
 func TestGetSchemaCompiler(t *testing.T) {
@@ -641,7 +584,6 @@ func TestModelValidation(t *testing.T) {
 				}
 			},
 			"log_level": "info",
-			"log_format": "text",
 			"thresholds": {"failures_before_switch": 3, "initial_timeout_ms": 10000, "max_timeout_ms": 300000}
 		}`
 
@@ -675,7 +617,6 @@ func TestModelValidation(t *testing.T) {
 				}
 			},
 			"log_level": "info",
-			"log_format": "text",
 			"thresholds": {"failures_before_switch": 3, "initial_timeout_ms": 10000, "max_timeout_ms": 300000}
 		}`
 
@@ -707,7 +648,6 @@ func TestModelValidation(t *testing.T) {
 				}
 			},
 			"log_level": "info",
-			"log_format": "text",
 			"thresholds": {"failures_before_switch": 3, "initial_timeout_ms": 10000, "max_timeout_ms": 300000}
 		}`
 
@@ -739,7 +679,6 @@ func TestModelValidation(t *testing.T) {
 				}
 			},
 			"log_level": "info",
-			"log_format": "text",
 			"thresholds": {"failures_before_switch": 3, "initial_timeout_ms": 10000, "max_timeout_ms": 300000}
 		}`
 
@@ -773,7 +712,6 @@ func TestModelValidation(t *testing.T) {
 				}
 			},
 			"log_level": "info",
-			"log_format": "text",
 			"thresholds": {"failures_before_switch": 3, "initial_timeout_ms": 10000, "max_timeout_ms": 300000}
 		}`
 
@@ -804,7 +742,6 @@ func TestModelValidation(t *testing.T) {
 				}
 			},
 			"log_level": "info",
-			"log_format": "text",
 			"thresholds": {"failures_before_switch": 3, "initial_timeout_ms": 10000, "max_timeout_ms": 300000}
 		}`
 
@@ -838,7 +775,6 @@ func TestModelValidation(t *testing.T) {
 				}
 			},
 			"log_level": "info",
-			"log_format": "text",
 			"thresholds": {"failures_before_switch": 3, "initial_timeout_ms": 10000, "max_timeout_ms": 300000}
 		}`
 
@@ -872,7 +808,6 @@ func TestModelValidation(t *testing.T) {
 				}
 			},
 			"log_level": "info",
-			"log_format": "text",
 			"thresholds": {"failures_before_switch": 3, "initial_timeout_ms": 10000, "max_timeout_ms": 300000}
 		}`
 

@@ -196,7 +196,6 @@
       "default": "info",
       "description": "Logging level"
     },
-    "log_format": {
       "type": "string",
       "enum": ["text", "color", "json"],
       "default": "color",

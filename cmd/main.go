@@ -48,7 +48,7 @@ func newModelsFlagSet() *flag.FlagSet {
 // newBenchFlagSet creates a FlagSet for the bench command.
 func newBenchFlagSet() *flag.FlagSet {
 	fs := flag.NewFlagSet("bench", flag.ExitOnError)
-	fs.String("prompt", "", "Path to file containing the prompt (required)")
+	fs.String("prompt", "", "Prompt text to send (required)")
 	fs.String("scope", "application", "Scope: application, providers, or all")
 	fs.Bool("stream", false, "Use streaming mode for requests")
 	return fs
@@ -138,7 +138,7 @@ func loadAndValidateConfig(configPath string) *config.Config {
 	}
 
 	// Initialize logger after config is loaded
-	if err := logger.Init(cfg.LogLevel, cfg.LogFormat); err != nil {
+	if err := logger.Init(cfg.LogLevel, ""); err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
 
@@ -416,29 +416,24 @@ func runBenchCmd(args []string) {
 		os.Exit(1)
 	}
 
-	promptFile := fs.Lookup("prompt").Value.String()
+	promptStr := fs.Lookup("prompt").Value.String()
 	scope := fs.Lookup("scope").Value.String()
 	stream := fs.Lookup("stream").Value.(flag.Getter).Get().(bool)
 
-	if promptFile == "" {
+	if promptStr == "" {
 		fmt.Fprintf(os.Stderr, "Error: -prompt is required\n\n")
 		fs.Usage()
 		os.Exit(1)
 	}
-	runBench(promptFile, scope, stream)
+	runBench(promptStr, scope, stream)
 }
 
 // runBench executes benchmark tests based on scope mode
-func runBench(promptFile, scope string, stream bool) {
+func runBench(promptStr, scope string, stream bool) {
 	cfg := loadAndValidateConfig("")
 
-	// Read prompt file
-	prompt, err := os.ReadFile(promptFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading prompt file: %v\n", err)
-		os.Exit(1)
-	}
-	promptStr := strings.TrimSpace(string(prompt))
+	// Trim prompt
+	promptStr = strings.TrimSpace(promptStr)
 
 	// Initialize providers
 	providers := initProviders(cfg)

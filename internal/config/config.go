@@ -92,7 +92,6 @@ type Config struct {
 	Models      map[string]ModelConfig    `json:"models"`
 	ModelOrder  []string                  `json:"-"` // Preserves order of models from config file
 	LogLevel    string                    `json:"log_level"`
-	LogFormat   string                    `json:"log_format"`
 	Thresholds  ThresholdsConfig          `json:"thresholds"`
 	RateLimit   *RateLimitConfig          `json:"rate_limit,omitempty"`
 	HTTP        HTTPConfig                `json:"http,omitempty"`
@@ -454,8 +453,7 @@ func DefaultConfig() *Config {
 				Providers: []ModelProvider{{Provider: "local", Model: "test"}},
 			},
 		},
-		LogLevel:  getLogLevel(),
-		LogFormat: getLogFormat(),
+		LogLevel: getLogLevel(),
 		Thresholds: ThresholdsConfig{
 			FailuresBeforeSwitch: 3,
 			InitialTimeout:       10000,
@@ -553,14 +551,6 @@ func getLogLevel() string {
 		return level
 	}
 	return "info"
-}
-
-// getLogFormat returns the log format from environment or default
-func getLogFormat() string {
-	if format := os.Getenv("OPENMODEL_LOG_FORMAT"); format != "" {
-		return format
-	}
-	return "color"
 }
 
 // Load loads configuration from the specified path or default locations.
@@ -738,7 +728,6 @@ func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 		Providers  map[string]ProviderConfig `json:"providers"`
 		Models     map[string]any            `json:"models"`
 		LogLevel   string                    `json:"log_level"`
-		LogFormat  string                    `json:"log_format"`
 		Thresholds ThresholdsConfig          `json:"thresholds"`
 	}
 	if err := jsonUnmarshalWithLines(data, &tempConfig, "parsing config structure"); err != nil {
@@ -759,9 +748,6 @@ func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 	cfg.Models = make(map[string]ModelConfig)
 	if tempConfig.LogLevel != "" {
 		cfg.LogLevel = tempConfig.LogLevel
-	}
-	if tempConfig.LogFormat != "" {
-		cfg.LogFormat = tempConfig.LogFormat
 	}
 	// Only override thresholds if explicitly set (non-zero)
 	if tempConfig.Thresholds.FailuresBeforeSwitch != 0 {
@@ -843,9 +829,6 @@ func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 	// Allow env vars to override config file values
 	if level := os.Getenv("OPENMODEL_LOG_LEVEL"); level != "" {
 		cfg.LogLevel = level
-	}
-	if format := os.Getenv("OPENMODEL_LOG_FORMAT"); format != "" {
-		cfg.LogFormat = format
 	}
 
 	return cfg, nil
