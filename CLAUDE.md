@@ -50,6 +50,8 @@ make generate
 
 **Framework:** Uses [Fiber](https://gofiber.io/) (not net/http) for HTTP server. Fiber provides fast request handling with built-in middleware support.
 
+**Default Port:** 12345
+
 ```
 cmd/main.go                 # Entry point with CLI commands (serve, test, models, config, bench)
 internal/
@@ -65,12 +67,11 @@ internal/
   provider/                # Provider interface and OpenAI provider implementation
     interface.go           # Provider interfaces (ChatProvider, EmbeddingProvider, etc.)
     provider.go            # Full Provider interface combining all capabilities
-    URLProvider            # Interface for providers exposing base URL
   server/                  # Fiber HTTP server, handlers, routing, rate limiting
     server.go              # Server setup and route registration
-    handlers.go            # OpenAI endpoint handlers
-    handlers_claude.go      # Anthropic endpoint handlers
-    handlers_openai.go      # OpenAI-specific handlers
+    handlers.go            # Main handler entry points
+    handlers_claude.go      # Anthropic /v1/messages endpoint handler
+    handlers_openai.go      # OpenAI /v1/chat/completions endpoint handler
     streaming.go            # SSE streaming utilities
     ratelimit.go           # Per-IP rate limiting
     constants.go           # Server timeouts and limits
@@ -97,6 +98,7 @@ All LLM providers implement the `provider.Provider` interface in `internal/provi
 - `ModelLister`: `ListModels()` - Model discovery
 - `RawRequester`: `DoRequest()`, `DoStreamRequest()` - Raw request forwarding
 - `URLProvider`: `BaseURL()` - Get provider's base URL (for logging/debugging)
+- `APIModeProvider`: `APIMode()` - Get provider's API mode ("openai", "anthropic", or "")
 
 The full `Provider` interface combines all capabilities. Use smaller interfaces when you only need specific functionality.
 
@@ -114,11 +116,19 @@ The full `Provider` interface combines all capabilities. Use smaller interfaces 
 
 ### API Format Conversion
 
-The `api_mode` config option controls request/response conversion:
+The `api_mode` is configured at the **provider** level (not model level) and controls request/response conversion:
 
-- `"openai"`: Provider expects OpenAI format, requests sent as-is to `/chat/completions`
-- `"anthropic"`: Provider expects Anthropic format, requests converted and sent to `/v1/messages`
-- `""` (empty): Passthrough mode, no conversion
+- `"openai"`: Use OpenAI format and endpoint (`/v1/chat/completions`)
+- `"anthropic"`: Use Anthropic format and endpoint (`/v1/messages`)
+- `""` (empty): Passthrough mode - use the **same endpoint** as received in the request
+
+**Examples:**
+| Request Endpoint | api_mode | Destination Endpoint |
+|-----------------|----------|---------------------|
+| `/v1/chat/completions` | `""` | `/v1/chat/completions` (passthrough) |
+| `/v1/chat/completions` | `"anthropic"` | `/v1/messages` (converted) |
+| `/v1/messages` | `""` | `/v1/messages` (passthrough) |
+| `/v1/messages` | `"openai"` | `/v1/chat/completions` (converted) |
 
 Converters implement `StreamConverter` interface in `internal/server/converters/`:
 - `ConvertRequest()`: Transform request body between formats
@@ -139,21 +149,26 @@ Config is loaded from:
 2. `./openmodel.json` (current directory, higher priority)
 3. `~/.config/openmodel/openmodel.json` (user config)
 
-Config merging: current directory config overrides user config values.
-
-Model aliases map to provider chains with selection strategy:
+Model aliases map to provider chains with selection strategy. `api_mode` is configured at provider level:
 ```json
 {
+  "providers": {
+    "ollama": {
+      "url": "http://localhost:11434/v1",
+      "api_mode": "",
+      "models": ["llama2", "mistral"]
+    },
+    "openai": {
+      "url": "https://api.openai.com/v1",
+      "api_key": "${OPENAI_API_KEY}",
+      "api_mode": "openai",
+      "models": ["gpt-4", "gpt-3.5-turbo"]
+    }
+  },
   "models": {
     "gpt-4": {
       "strategy": "fallback",
-      "api_mode": "openai",
       "providers": ["openai/gpt-4", "ollama/llama2"]
-    },
-    "claude-3": {
-      "strategy": "fallback",
-      "api_mode": "anthropic",
-      "providers": ["anthropic/claude-3-opus"]
     }
   }
 }
@@ -191,3 +206,20 @@ From AGENTS.md:
 - Integration tests use httptest for simulating HTTP requests
 - Mock providers for testing without real API calls
 - Run specific tests: `go test -v -run TestFunctionName ./path/to/package`
+
+## API Endpoints
+
+### OpenAI-Compatible API
+- `GET /v1/models` - List available models
+- `GET /v1/models/{model}` - Get model info
+- `POST /v1/chat/completions` - Chat completion (SSE streaming supported)
+- `POST /v1/completions` - Text completion (SSE streaming supported)
+- `POST /v1/embeddings` - Create embeddings
+
+### Anthropic-Compatible API
+- `POST /v1/messages` - Claude Messages API (SSE streaming supported)
+- Requires `anthropic-version` header
+
+### Server Endpoints
+- `GET /` - Server status
+- `GET /health` - Health check endpoint (for Docker healthchecks)
