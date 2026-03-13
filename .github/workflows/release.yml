@@ -123,12 +123,12 @@ jobs:
           cosign sign \
             --yes \
             -a "https://github.com/${{ github.repository_owner }}" \
-            --output signature \
+            --output-signature openmodel-${{ steps.version.outputs.VERSION }}.amd64.sig \
             "ghcr.io/${{ github.repository_owner }}/openmodel:${{ steps.version.outputs.VERSION }}"
           cosign sign \
             --yes \
             -a "https://github.com/${{ github.repository_owner }}" \
-            --output signature \
+            --output-signature openmodel-${{ steps.version.outputs.VERSION }}.latest.sig \
             "ghcr.io/${{ github.repository_owner }}/openmodel:latest"
 
       - name: Generate SBOM
@@ -144,6 +144,6 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: |
             sbom-${{ steps.version.outputs.VERSION }}.spdx.json
-            openmodel-${{ steps.version.outputs.VERSION }}.amd64.signature
-            openmodel-${{ steps.version.outputs.VERSION }}.arm64.signature
+            openmodel-${{ steps.version.outputs.VERSION }}.amd64.sig
+            openmodel-${{ steps.version.outputs.VERSION }}.latest.sig
           generate_release_notes: false
