@@ -181,8 +181,8 @@ func TestListModels(t *testing.T) {
 
 	t.Run("error status code", func(t *testing.T) {
 		server := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(openai.ErrorResponse{
 				Err: &openai.ErrorDetail{
 					Message: "internal server error",
@@ -365,8 +365,8 @@ func TestChat(t *testing.T) {
 
 	t.Run("error status code", func(t *testing.T) {
 		server := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(openai.ErrorResponse{
 				Err: &openai.ErrorDetail{
 					Message: "invalid request",
@@ -558,8 +558,8 @@ func TestStreamChat(t *testing.T) {
 
 	t.Run("error status code", func(t *testing.T) {
 		server := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(openai.ErrorResponse{
 				Err: &openai.ErrorDetail{
 					Message: "invalid request",
@@ -1009,8 +1009,8 @@ func TestComplete(t *testing.T) {
 
 	t.Run("error status code", func(t *testing.T) {
 		server := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(openai.ErrorResponse{
 				Err: &openai.ErrorDetail{
 					Message: "invalid request",
@@ -1139,8 +1139,8 @@ func TestStreamComplete(t *testing.T) {
 
 	t.Run("error status code", func(t *testing.T) {
 		server := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(openai.ErrorResponse{
 				Err: &openai.ErrorDetail{
 					Message: "invalid request",
@@ -1515,8 +1515,8 @@ func TestEmbed(t *testing.T) {
 
 	t.Run("error status code", func(t *testing.T) {
 		server := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(openai.ErrorResponse{
 				Err: &openai.ErrorDetail{
 					Message: "invalid request",
@@ -1691,8 +1691,8 @@ func TestListModelsTableDriven(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tc.responseStatus)
 				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.responseStatus)
 				w.Write([]byte(tc.responseBody))
 			}))
 			defer server.Close()
@@ -1741,8 +1741,8 @@ func TestChatTableDriven(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tc.responseStatus)
 				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.responseStatus)
 				w.Write([]byte(tc.responseBody))
 			}))
 			defer server.Close()
@@ -1922,8 +1922,8 @@ func TestDoRequestMethod(t *testing.T) {
 
 	t.Run("error_status_code", func(t *testing.T) {
 		server := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(openai.ErrorResponse{
 				Err: &openai.ErrorDetail{
 					Message: "internal server error",
@@ -2019,8 +2019,8 @@ func TestDoStreamRequest(t *testing.T) {
 
 	t.Run("error_status_code", func(t *testing.T) {
 		server := newTestServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(openai.ErrorResponse{
 				Err: &openai.ErrorDetail{
 					Message: "bad request",

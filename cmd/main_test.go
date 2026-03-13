@@ -267,6 +267,7 @@ func TestRunModels_WithValidConfig(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "openmodel.json")
 	configJSON := `{
 		"$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
+		"server": {"port": 12345, "host": "localhost"},
 		"models": {
 			"smart": {
 				"providers": [{"provider": "openai", "model": "gpt-4"}]
@@ -391,6 +392,7 @@ func TestRunConfig_WithValidConfig(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "openmodel.json")
 	configJSON := `{
 		"$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
+		"server": {"port": 12345, "host": "localhost"},
 		"providers": {},
 		"models": {}
 	}`
@@ -414,7 +416,6 @@ func TestRunConfig_WithValidConfig(t *testing.T) {
 		t.Fatalf("expected printed config path %q, got %q", configPath, strings.TrimSpace(buf.String()))
 	}
 }
-
 
 func TestPrintModelsUsage(t *testing.T) {
 	oldStderr := os.Stderr
