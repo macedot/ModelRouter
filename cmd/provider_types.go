@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 
-	"github.com/macedot/ModelRouter/internal/api/openai"
-	"github.com/macedot/ModelRouter/internal/provider"
+	"github.com/macedot/modelrouter/internal/api/openai"
+	"github.com/macedot/modelrouter/internal/provider"
 )
 
 type benchProvider interface {

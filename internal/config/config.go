@@ -25,7 +25,7 @@ const envAllowRemoteSchemas = "OPENMODEL_ALLOW_REMOTE_SCHEMAS"
 // Known schema checksums for integrity verification
 // Maps schema URLs to their expected SHA256 checksums
 var knownSchemaChecksums = map[string]string{
-	"https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json": "62ccb4faffd88dad8f58a43f9811623a08a7584d2fa45ac7fe3b4d0560f34055",
+	"https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json": "62ccb4faffd88dad8f58a43f9811623a08a7584d2fa45ac7fe3b4d0560f34055",
 }
 
 // jsonErrorWithContext wraps JSON parsing errors with line number and context

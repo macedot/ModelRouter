@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/macedot/ModelRouter/internal/config"
-	applogger "github.com/macedot/ModelRouter/internal/logger"
+	"github.com/macedot/modelrouter/internal/config"
+	applogger "github.com/macedot/modelrouter/internal/logger"
 )
 
 // providerResult holds a provider with its metadata

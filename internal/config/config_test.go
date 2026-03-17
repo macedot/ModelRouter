@@ -10,7 +10,7 @@ import (
 )
 
 func TestKnownSchemaChecksum_IsPinned(t *testing.T) {
-	const schemaURL = "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json"
+	const schemaURL = "https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json"
 
 	checksum, ok := knownSchemaChecksums[schemaURL]
 	assert.True(t, ok)

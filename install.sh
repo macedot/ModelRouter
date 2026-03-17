@@ -58,7 +58,7 @@ esac
 
 # Get latest version from GitHub API
 info "Fetching latest release..."
-VERSION=$(curl -s https://api.github.com/repos/macedot/ModelRouter/releases/latest | grep -o '"tag_name": "[0-9]*' | sed 's/"//g')
+VERSION=$(curl -s https://api.github.com/repos/macedot/modelrouter/releases/latest | grep -o '"tag_name": "[0-9]*' | sed 's/"//g')
 
 if [ -z "$VERSION" ]; then
     error "Failed to fetch version from GitHub"
@@ -71,7 +71,7 @@ if [ -n "$MODELROUTER_VERSION" ]; then
 fi
 
 # Download URL
-DOWNLOAD_URL="https://github.com/macedot/ModelRouter/releases/download/${VERSION}/ModelRouter-linux-${ARCH}"
+DOWNLOAD_URL="https://github.com/macedot/modelrouter/releases/download/${VERSION}/ModelRouter-linux-${ARCH}"
 
 # Download binary
 info "Downloading ModelRouter ${VERSION} for ${ARCH}..."

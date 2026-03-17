@@ -1,6 +1,6 @@
 package server
 
-import "github.com/macedot/ModelRouter/internal/provider"
+import "github.com/macedot/modelrouter/internal/provider"
 
 type requestProvider interface {
 	provider.RawRequester

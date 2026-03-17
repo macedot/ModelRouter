@@ -6,7 +6,7 @@ BUILD_DIR=.
 CMD_DIR=./cmd
 GO:=$(shell which go)
 GOFLAGS=-v
-DOCKER_IMAGE=ghcr.io/macedot/ModelRouter
+DOCKER_IMAGE=ghcr.io/macedot/modelrouter
 
 # Get git version for builds
 GIT_VERSION:=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")

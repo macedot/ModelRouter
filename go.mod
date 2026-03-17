@@ -1,4 +1,4 @@
-module github.com/macedot/ModelRouter
+module github.com/macedot/modelrouter
 
 go 1.26
 

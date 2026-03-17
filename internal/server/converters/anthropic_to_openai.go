@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/macedot/ModelRouter/internal/api/anthropic"
-	"github.com/macedot/ModelRouter/internal/api/openai"
-	"github.com/macedot/ModelRouter/internal/endpoints"
+	"github.com/macedot/modelrouter/internal/api/anthropic"
+	"github.com/macedot/modelrouter/internal/api/openai"
+	"github.com/macedot/modelrouter/internal/endpoints"
 )
 
 // AnthropicToOpenAIConverter converts Anthropic format to OpenAI format

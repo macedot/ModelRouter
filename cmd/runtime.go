@@ -8,11 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/macedot/ModelRouter/internal/config"
-	"github.com/macedot/ModelRouter/internal/logger"
-	"github.com/macedot/ModelRouter/internal/provider"
-	"github.com/macedot/ModelRouter/internal/server"
-	"github.com/macedot/ModelRouter/internal/state"
+	"github.com/macedot/modelrouter/internal/config"
+	"github.com/macedot/modelrouter/internal/logger"
+	"github.com/macedot/modelrouter/internal/provider"
+	"github.com/macedot/modelrouter/internal/server"
+	"github.com/macedot/modelrouter/internal/state"
 )
 
 // initProviders creates and initializes all configured providers.

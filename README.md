@@ -54,7 +54,7 @@ A high-performance Go-based HTTP proxy server providing **OpenAI-compatible** an
 Install ModelRouter with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/macedot/ModelRouter/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/macedot/modelrouter/main/install.sh | sh
 ```
 
 This will:
@@ -68,7 +68,7 @@ This will:
 Pull the latest image:
 
 ```bash
-docker pull ghcr.io/macedot/ModelRouter:latest
+docker pull ghcr.io/macedot/modelrouter:latest
 ```
 
 Run with mounted config:
@@ -77,7 +77,7 @@ Run with mounted config:
 docker run -d \
   -p 12345:12345 \
   -v ~/.config/ModelRouter/ModelRouter.json:/root/.config/ModelRouter/ModelRouter.json:ro \
-  ghcr.io/macedot/ModelRouter:latest
+  ghcr.io/macedot/modelrouter:latest
 ```
 
 Or use docker-compose:
@@ -97,7 +97,7 @@ docker-compose up -d
 Build from source:
 
 ```bash
-git clone https://github.com/macedot/ModelRouter.git
+git clone https://github.com/macedot/modelrouter.git
 cd ModelRouter
 make build
 make install
@@ -113,7 +113,7 @@ Create `~/.config/ModelRouter/ModelRouter.json`:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
+  "$schema": "https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json",
   "server": {
     "port": 12345,
     "host": "localhost"

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/macedot/ModelRouter/internal/config"
+	"github.com/macedot/modelrouter/internal/config"
 )
 
 func TestPrintUsage(t *testing.T) {
@@ -266,7 +266,7 @@ func TestRunModels_WithValidConfig(t *testing.T) {
 
 	configPath := filepath.Join(t.TempDir(), "ModelRouter.json")
 	configJSON := `{
-		"$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
+		"$schema": "https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json",
 		"server": {"port": 12345, "host": "localhost"},
 		"models": {
 			"smart": {
@@ -391,7 +391,7 @@ func TestRunConfig_WithValidConfig(t *testing.T) {
 
 	configPath := filepath.Join(t.TempDir(), "ModelRouter.json")
 	configJSON := `{
-		"$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
+		"$schema": "https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json",
 		"server": {"port": 12345, "host": "localhost"},
 		"providers": {},
 		"models": {}

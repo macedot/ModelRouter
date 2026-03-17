@@ -16,8 +16,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/macedot/ModelRouter/internal/api/openai"
-	"github.com/macedot/ModelRouter/internal/config"
+	"github.com/macedot/modelrouter/internal/api/openai"
+	"github.com/macedot/modelrouter/internal/config"
 )
 
 // Version is set at build time via -ldflags "-X main.Version=1.0.0"

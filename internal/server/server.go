@@ -9,11 +9,11 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/macedot/ModelRouter/internal/config"
-	applogger "github.com/macedot/ModelRouter/internal/logger"
-	"github.com/macedot/ModelRouter/internal/provider"
-	_ "github.com/macedot/ModelRouter/internal/server/converters"
-	"github.com/macedot/ModelRouter/internal/state"
+	"github.com/macedot/modelrouter/internal/config"
+	applogger "github.com/macedot/modelrouter/internal/logger"
+	"github.com/macedot/modelrouter/internal/provider"
+	_ "github.com/macedot/modelrouter/internal/server/converters"
+	"github.com/macedot/modelrouter/internal/state"
 	"github.com/sixafter/nanoid"
 )
 

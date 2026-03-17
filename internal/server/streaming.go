@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	applogger "github.com/macedot/ModelRouter/internal/logger"
-	"github.com/macedot/ModelRouter/internal/server/converters"
+	applogger "github.com/macedot/modelrouter/internal/logger"
+	"github.com/macedot/modelrouter/internal/server/converters"
 )
 
 // streamWithFailover handles streaming requests with failover and format conversion

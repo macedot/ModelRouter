@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/macedot/ModelRouter/internal/api/openai"
-	"github.com/macedot/ModelRouter/internal/config"
-	"github.com/macedot/ModelRouter/internal/provider"
-	"github.com/macedot/ModelRouter/internal/state"
+	"github.com/macedot/modelrouter/internal/api/openai"
+	"github.com/macedot/modelrouter/internal/config"
+	"github.com/macedot/modelrouter/internal/provider"
+	"github.com/macedot/modelrouter/internal/state"
 	"github.com/stretchr/testify/assert"
 )
 

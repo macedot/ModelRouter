@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/macedot/ModelRouter/internal/api/openai"
+	"github.com/macedot/modelrouter/internal/api/openai"
 )
 
 // maxResponseBodySize defines the maximum size of response body to read for error handling

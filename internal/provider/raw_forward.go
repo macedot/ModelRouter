@@ -9,8 +9,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/macedot/ModelRouter/internal/api/openai"
-	applogger "github.com/macedot/ModelRouter/internal/logger"
+	"github.com/macedot/modelrouter/internal/api/openai"
+	applogger "github.com/macedot/modelrouter/internal/logger"
 )
 
 // DoRequest forwards a raw request body to the provider endpoint

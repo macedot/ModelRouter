@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/macedot/ModelRouter/internal/config"
+	"github.com/macedot/modelrouter/internal/config"
 )
 
 // These tests rely on a real config file in the developer's environment.
