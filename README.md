@@ -8,10 +8,12 @@ A high-performance Go-based HTTP proxy server providing **OpenAI-compatible** an
 
 ### 🔄 API Compatibility
 - **OpenAI-Compatible API**: Works seamlessly with any OpenAI client SDK
+  - `/models` - List available models (our models)
+  - `/v1/models` - List available models
   - `/v1/chat/completions` - Chat completions (streaming supported)
   - `/v1/completions` - Legacy text completions
-  - `/v1/models` - List and get model information
   - `/v1/embeddings` - Create embeddings
+  - `/v1/moderations` - Content moderation
 - **Anthropic-Compatible API**: Native support for Claude API format
   - `/v1/messages` - Anthropic's messages endpoint
 - **Format Conversion**: Automatic conversion between OpenAI and Anthropic API formats
@@ -283,11 +285,12 @@ echo "What is the capital of France?" > prompt.txt
 
 | Endpoint               | Method | Description                                   |
 | ---------------------- | ------ | --------------------------------------------- |
+| `/models`              | GET    | List available models                         |
 | `/v1/models`           | GET    | List available models                         |
-| `/v1/models/{model}`   | GET    | Get model info                                |
 | `/v1/chat/completions` | POST   | Chat completion (SSE streaming supported)     |
 | `/v1/completions`      | POST   | Text completion (legacy, streaming supported) |
 | `/v1/embeddings`       | POST   | Create embeddings                             |
+| `/v1/moderations`      | POST   | Content moderation                           |
 
 ### Anthropic-Compatible Endpoints
 
