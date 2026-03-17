@@ -178,6 +178,7 @@ Create `~/.config/ModelRouter/ModelRouter.json`:
 | -------------- | ------------------------- | -------------------------------------------- | --------- |
 | **Server**     | `port`                    | Server port                                  | 12345     |
 |                | `host`                    | Server host                                  | localhost |
+| **Logging**    | `log_level`               | Log level: trace, debug, info, warn, error  | info      |
 | **Providers**  | `url`                     | Base URL for the provider                    | Required  |
 |                | `api_key`                 | API key (supports `${VAR}` expansion)        | Optional  |
 |                | `api_mode`                | API format: `"openai"` or `"anthropic"`      | Required  |
@@ -198,6 +199,14 @@ Create `~/.config/ModelRouter/ModelRouter.json`:
 | **Limits**     | `max_request_body_bytes`  | Max request body (1MB)                       | 1048576   |
 |                | `max_response_body_bytes` | Max response body (1MB)                      | 1048576   |
 |                | `max_stream_buffer_bytes` | Max stream buffer (1MB)                      | 1048576   |
+
+### Environment Variables
+
+| Variable                | Description                                      | Default    |
+| ----------------------- | ------------------------------------------------ | ---------- |
+| `OPENMODEL_CONFIG`      | Path to config file                             | auto       |
+| `OPENMODEL_LOG_LEVEL`   | Log level: trace, debug, info, warn, error     | info       |
+| `OPENMODEL_LOG_FORMAT`  | Log format: text, color, json                  | text       |
 
 ---
 
