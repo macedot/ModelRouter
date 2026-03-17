@@ -7,8 +7,9 @@ A high-performance Go-based HTTP proxy server providing **OpenAI-compatible** an
 ## ✨ Features
 
 ### 🔄 API Compatibility
+- **ModelRouter API**: Our model listing
+  - `/models` - List our configured models
 - **OpenAI-Compatible API**: Works seamlessly with any OpenAI client SDK
-  - `/models` - List available models (our models)
   - `/v1/models` - List available models
   - `/v1/chat/completions` - Chat completions (streaming supported)
   - `/v1/completions` - Legacy text completions
@@ -281,11 +282,16 @@ echo "What is the capital of France?" > prompt.txt
 
 ## 🔌 API Endpoints
 
+### ModelRouter Endpoints
+
+| Endpoint | Method | Description              |
+| ------- | ------ | ---------------------- |
+| `/models` | GET  | List our models        |
+
 ### OpenAI-Compatible Endpoints
 
 | Endpoint               | Method | Description                                   |
 | ---------------------- | ------ | --------------------------------------------- |
-| `/models`              | GET    | List available models                         |
 | `/v1/models`           | GET    | List available models                         |
 | `/v1/chat/completions` | POST   | Chat completion (SSE streaming supported)     |
 | `/v1/completions`      | POST   | Text completion (legacy, streaming supported) |
