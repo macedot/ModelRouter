@@ -3,7 +3,8 @@
 // Usage:
 //
 //	ModelRouter serve     Start the ModelRouter server (default)
-//	ModelRouter test      Test configured models
+//	ModelRouter models    List available models
+//	ModelRouter config    Find and validate config file
 //	ModelRouter bench     Benchmark models with prompts
 //	ModelRouter -h        Show help
 package main
@@ -132,7 +133,7 @@ func printBenchUsage(fs *flag.FlagSet) {
 // runServeCmd handles the serve command
 func runServeCmd(args []string) {
 	cfg, exitCode := executeServeCmd(args)
-	if exitCode != 0 {
+	if exitCode != 0 || cfg == nil {
 		os.Exit(exitCode)
 	}
 	runServer(cfg)

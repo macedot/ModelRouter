@@ -152,6 +152,19 @@ func runServer(cfg *config.Config) {
 	startSignalHandler(ctx, cancel, srv, configPath)
 
 	logger.Info("Starting_ModelRouter", "host", cfg.Server.Host, "port", cfg.Server.Port)
+
+	// Log available endpoints
+	logger.Debug("Available endpoints", "endpoints", []string{
+		"/",
+		"/health",
+		"/v1/chat/completions",
+		"/v1/completions",
+		"/v1/models",
+		"/v1/embeddings",
+		"/v1/moderations",
+		"/v1/messages",
+	})
+
 	if err := srv.Start(); err != nil && err != http.ErrServerClosed {
 		logger.Error("Server_error", "error", err)
 	}
