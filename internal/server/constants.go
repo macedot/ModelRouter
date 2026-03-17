@@ -67,7 +67,10 @@ const (
 // OpenAI endpoints
 const (
 	EndpointV1ChatCompletions = endpoints.V1ChatCompletions
-	EndpointV1Models          = endpoints.V1Models
+	EndpointV1Completions    = endpoints.V1Completions
+	EndpointV1Models         = endpoints.V1Models
+	EndpointV1Embeddings     = endpoints.V1Embeddings
+	EndpointV1Moderations    = endpoints.V1Moderations
 )
 
 // Anthropic endpoints

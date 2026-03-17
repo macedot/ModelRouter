@@ -179,9 +179,14 @@ func (s *Server) registerRoutes(app *fiber.App) {
 	// Health endpoints
 	app.Get(EndpointRoot, s.handleRoot)
 	app.Get(EndpointHealth, s.handleHealth)
+	app.Get("/models", s.handleV1Models) // Alias for /v1/models
 
 	// OpenAI endpoints
+	app.Get(EndpointV1Models, s.handleV1Models)
 	app.Post(EndpointV1ChatCompletions, s.handleV1ChatCompletions)
+	app.Post(EndpointV1Completions, s.handleV1Completions)
+	app.Post(EndpointV1Embeddings, s.handleV1Embeddings)
+	app.Post(EndpointV1Moderations, s.handleV1Moderations)
 
 	// Anthropic endpoints
 	app.Post(EndpointV1Messages, s.handleV1Messages)
