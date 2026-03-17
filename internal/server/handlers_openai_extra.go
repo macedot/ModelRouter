@@ -3,6 +3,7 @@ package server
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/macedot/modelrouter/internal/api/openai"
@@ -12,13 +13,14 @@ import (
 func (s *Server) handleV1Models(c *fiber.Ctx) error {
 	cfg := s.GetConfig()
 
+	created := time.Now().Unix()
 	models := make([]openai.Model, 0, len(cfg.Models))
 	for name := range cfg.Models {
 		models = append(models, openai.Model{
 			ID:      name,
 			Object:  "model",
-			Created: 1704067200, // Fixed timestamp for consistency
-			OwnedBy: "modelrouter",
+			Created: created,
+			OwnedBy: "openai", // OpenAI-compatible format
 		})
 	}
 
