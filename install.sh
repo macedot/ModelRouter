@@ -1,6 +1,6 @@
 #!/bin/sh
 # This script installs ModelRouter on Linux
-# It detects OS and architecture, downloads the binary, and installs it
+# It detects OS and architecture, downloads the binary, and installs it to ~/.local/bin
 
 set -eu
 
@@ -10,6 +10,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 RESET='\033[0m'
+
+# Installation directory - user local bin
+INSTALL_DIR="${HOME}/.local/bin"
 
 # Helper functions
 info() {
@@ -24,13 +27,6 @@ error() {
     echo "${RED}ERROR: $*${NC}" >&2
     exit 1
 }
-
-# Check if running as root
-if [ "$(id -u)" -eq 0 ]; then
-    SUDO=""
-else
-    SUDO="sudo"
-fi
 
 # OS detection
 OS="$(uname -s)"
@@ -48,6 +44,18 @@ esac
 
 info "Detected Linux $ARCH"
 
+# Ensure ~/.local/bin exists and is in PATH
+if [ ! -d "$INSTALL_DIR" ]; then
+    info "Creating $INSTALL_DIR..."
+    mkdir -p "$INSTALL_DIR"
+fi
+
+# Add to PATH if not already there
+case ":$PATH:" in
+    *":$INSTALL_DIR:"*) ;;
+    *) export PATH="$INSTALL_DIR:$PATH" ;;
+esac
+
 # Get latest version from GitHub API
 info "Fetching latest release..."
 VERSION=$(curl -s https://api.github.com/repos/macedot/ModelRouter/releases/latest | grep -o '"tag_name": "[0-9]*' | sed 's/"//g')
@@ -57,9 +65,9 @@ if [ -z "$VERSION" ]; then
 fi
 
 # Allow version override
-if [ -n "$OPENMODEL_VERSION" ]; then
-    VERSION="$OPENMODEL_VERSION"
-    info "Using OPENMODEL_VERSION=$VERSION"
+if [ -n "$MODELROUTER_VERSION" ]; then
+    VERSION="$MODELROUTER_VERSION"
+    info "Using MODELROUTER_VERSION=$VERSION"
 fi
 
 # Download URL
@@ -67,31 +75,33 @@ DOWNLOAD_URL="https://github.com/macedot/ModelRouter/releases/download/${VERSION
 
 # Download binary
 info "Downloading ModelRouter ${VERSION} for ${ARCH}..."
-if ! curl -fsSL --progress-bar -o /usr/local/bin/ModelRouter "$DOWNLOAD_URL"; then
+if ! curl -fsSL --progress-bar -o "$INSTALL_DIR/ModelRouter" "$DOWNLOAD_URL"; then
     error "Failed to download ModelRouter"
 fi
 
 # Make executable
-chmod +x /usr/local/bin/ModelRouter
+chmod +x "$INSTALL_DIR/ModelRouter"
 
-# Create systemd service (optional)
-if [ -d /etc/systemd/system ]; then
-    info "Creating systemd service..."
-    cat <<EOF | $SUDO tee /etc/systemd/system/ModelRouter.service > /dev/null
+# Create systemd service (optional, for user-level service)
+if [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user" ]; then
+    info "Creating user systemd service..."
+    mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    cat <<EOF > "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/ModelRouter.service"
 [Unit]
 Description=ModelRouter API proxy server
 After=network.target.wants network-online.target
+
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/ModelRouter
+ExecStart=$INSTALL_DIR/ModelRouter
 Restart=on-failure
 RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
-    
-    info "Systemd service created. Enable with: sudo systemctl enable ModelRouter"
+
+    info "User systemd service created. Enable with: systemctl --user enable ModelRouter"
 fi
 
 # Update README
@@ -101,15 +111,19 @@ info "Updating README..."
 echo ""
 info "Installation complete!"
 info ""
-info "ModelRouter hasVERSION} has been installed to /usr/local/bin/ModelRouter"
+info "ModelRouter has been installed to $INSTALL_DIR/ModelRouter"
 info ""
-if [ -d /etc/systemd/system/ModelRouter.service ]; then
+if [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user" ]; then
     info "To start the server:"
-    info "  sudo systemctl start ModelRouter"
+    info "  systemctl --user start ModelRouter"
     info ""
     info "To check status:"
-    info "  sudo systemctl status ModelRouter"
+    info "  systemctl --user status ModelRouter"
+    info ""
+    info "To start on login:"
+    info "  systemctl --user enable ModelRouter"
 fi
 info ""
+info "Make sure $INSTALL_DIR is in your PATH."
 info "Run 'ModelRouter' to start the server."
 echo ""

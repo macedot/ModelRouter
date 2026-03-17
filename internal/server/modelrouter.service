@@ -1,11 +1,11 @@
 [Unit]
-Description=ModelRouter - Ollama-compatible proxy server
+Description=ModelRouter - OpenAI and Anthropic compatible proxy server
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/ModelRouter
+ExecStart=%h/.local/bin/ModelRouter
 Restart=on-failure
 RestartSec=3
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

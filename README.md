@@ -23,7 +23,7 @@ A high-performance Go-based HTTP proxy server providing **OpenAI-compatible** an
 - **API Modes**: Configure providers to use OpenAI or Anthropic API format via `api_mode` setting
 - **Passthrough Mode**: Forward requests directly to providers without conversion
 - **Automatic Fallback**: Tries providers in sequence on failure
-- **Provider Strategies**: 
+- **Provider Strategies**:
   - `fallback` - Try providers in order until success
   - `round-robin` - Distribute load across providers
   - `random` - Random provider selection
@@ -60,8 +60,8 @@ curl -fsSL https://raw.githubusercontent.com/macedot/ModelRouter/main/install.sh
 This will:
 - ✓ Detect your system architecture
 - ✓ Download the latest binary from GitHub Releases
-- ✓ Install to `/usr/local/bin/ModelRouter`
-- ✓ Create a systemd service (optional)
+- ✓ Install to `~/.local/bin/ModelRouter`
+- ✓ Create a user-level systemd service (optional)
 
 ### 🐳 Docker
 
@@ -100,8 +100,10 @@ Build from source:
 git clone https://github.com/macedot/ModelRouter.git
 cd ModelRouter
 make build
-sudo make install
+make install
 ```
+
+Then ensure `~/.local/bin` is in your PATH:
 
 ---
 
@@ -169,30 +171,30 @@ Create `~/.config/ModelRouter/ModelRouter.json`:
 
 ### 📝 Configuration Options
 
-| Section | Option | Description | Default |
-|---------|--------|-------------|---------|
-| **Server** | `port` | Server port | 12345 |
-| | `host` | Server host | localhost |
-| **Providers** | `url` | Base URL for the provider | Required |
-| | `api_key` | API key (supports `${VAR}` expansion) | Optional |
-| | `api_mode` | API format: `"openai"` or `"anthropic"` | Required |
-| | `models` | List of available models | Required |
-| | `thresholds` | Provider-specific failure thresholds | Optional |
-| **Models** | `strategy` | `"fallback"`, `"round-robin"`, or `"random"` | fallback |
-| | `default` | Use as default when no model specified | false |
-| | `providers` | Array of `"provider/model"` strings | Required |
-| **Thresholds** | `failures_before_switch` | Failures before trying next provider | 3 |
-| | `initial_timeout_ms` | Initial timeout after all providers fail | 10000 |
-| | `max_timeout_ms` | Maximum timeout cap | 300000 |
-| **Rate Limit** | `enabled` | Enable per-IP rate limiting | false |
-| | `requests_per_second` | Max requests per IP per second | 10 |
-| | `burst` | Maximum burst size (bucket capacity) | 20 |
-| | `trusted_proxies` | Trusted proxy IP ranges (CIDR) | [] |
-| **HTTP** | `timeout_seconds` | Request timeout | 120 |
-| | `max_idle_conns` | Maximum idle connections | 100 |
-| **Limits** | `max_request_body_bytes` | Max request body (1MB) | 1048576 |
-| | `max_response_body_bytes` | Max response body (1MB) | 1048576 |
-| | `max_stream_buffer_bytes` | Max stream buffer (1MB) | 1048576 |
+| Section        | Option                    | Description                                  | Default   |
+| -------------- | ------------------------- | -------------------------------------------- | --------- |
+| **Server**     | `port`                    | Server port                                  | 12345     |
+|                | `host`                    | Server host                                  | localhost |
+| **Providers**  | `url`                     | Base URL for the provider                    | Required  |
+|                | `api_key`                 | API key (supports `${VAR}` expansion)        | Optional  |
+|                | `api_mode`                | API format: `"openai"` or `"anthropic"`      | Required  |
+|                | `models`                  | List of available models                     | Required  |
+|                | `thresholds`              | Provider-specific failure thresholds         | Optional  |
+| **Models**     | `strategy`                | `"fallback"`, `"round-robin"`, or `"random"` | fallback  |
+|                | `default`                 | Use as default when no model specified       | false     |
+|                | `providers`               | Array of `"provider/model"` strings          | Required  |
+| **Thresholds** | `failures_before_switch`  | Failures before trying next provider         | 3         |
+|                | `initial_timeout_ms`      | Initial timeout after all providers fail     | 10000     |
+|                | `max_timeout_ms`          | Maximum timeout cap                          | 300000    |
+| **Rate Limit** | `enabled`                 | Enable per-IP rate limiting                  | false     |
+|                | `requests_per_second`     | Max requests per IP per second               | 10        |
+|                | `burst`                   | Maximum burst size (bucket capacity)         | 20        |
+|                | `trusted_proxies`         | Trusted proxy IP ranges (CIDR)               | []        |
+| **HTTP**       | `timeout_seconds`         | Request timeout                              | 120       |
+|                | `max_idle_conns`          | Maximum idle connections                     | 100       |
+| **Limits**     | `max_request_body_bytes`  | Max request body (1MB)                       | 1048576   |
+|                | `max_response_body_bytes` | Max response body (1MB)                      | 1048576   |
+|                | `max_stream_buffer_bytes` | Max stream buffer (1MB)                      | 1048576   |
 
 ---
 
@@ -279,26 +281,26 @@ echo "What is the capital of France?" > prompt.txt
 
 ### OpenAI-Compatible Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/models` | GET | List available models |
-| `/v1/models/{model}` | GET | Get model info |
-| `/v1/chat/completions` | POST | Chat completion (SSE streaming supported) |
-| `/v1/completions` | POST | Text completion (legacy, streaming supported) |
-| `/v1/embeddings` | POST | Create embeddings |
+| Endpoint               | Method | Description                                   |
+| ---------------------- | ------ | --------------------------------------------- |
+| `/v1/models`           | GET    | List available models                         |
+| `/v1/models/{model}`   | GET    | Get model info                                |
+| `/v1/chat/completions` | POST   | Chat completion (SSE streaming supported)     |
+| `/v1/completions`      | POST   | Text completion (legacy, streaming supported) |
+| `/v1/embeddings`       | POST   | Create embeddings                             |
 
 ### Anthropic-Compatible Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/messages` | POST | Anthropic messages API (streaming supported) |
+| Endpoint       | Method | Description                                  |
+| -------------- | ------ | -------------------------------------------- |
+| `/v1/messages` | POST   | Anthropic messages API (streaming supported) |
 
 ### Server Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Server status and version |
-| `/health` | GET | Health check (for Docker/K8s healthchecks) |
+| Endpoint  | Method | Description                                |
+| --------- | ------ | ------------------------------------------ |
+| `/`       | GET    | Server status and version                  |
+| `/health` | GET    | Health check (for Docker/K8s healthchecks) |
 
 ---
 
@@ -307,10 +309,10 @@ echo "What is the capital of France?" > prompt.txt
 ModelRouter acts as an intelligent reverse proxy:
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Client    │────▶│   ModelRouter      │────▶│ Provider 1      │
-│ (OpenAI SDK)│     │  (Proxy/Conv)    │     │ (OpenAI/Anthro)│
-└─────────────┘     └──────────────────┘     └─────────────────┘
+┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Client    │────▶│  ModelRouter    │────▶│ Provider 1      │
+│ (OpenAI SDK)│     │  (Proxy/Conv)   │     │ (OpenAI/Anthro) │
+└─────────────┘     └─────────────────┘     └─────────────────┘
                               │
                               ├──────────────────┐
                               │                  │
@@ -386,16 +388,16 @@ make generate
 
 Current test coverage: **53.0%**
 
-| Package | Coverage |
-|---------|----------|
-| internal/logger | 74.0% |
-| internal/state | 78.0% |
-| internal/api/anthropic | 84.7% |
-| internal/provider | 72.6% |
-| internal/api/openai | 74.3% |
-| internal/config | 67.0% |
-| internal/server | 30.0% |
-| cmd | 26.2% |
+| Package                | Coverage |
+| ---------------------- | -------- |
+| internal/logger        | 74.0%    |
+| internal/state         | 78.0%    |
+| internal/api/anthropic | 84.7%    |
+| internal/provider      | 72.6%    |
+| internal/api/openai    | 74.3%    |
+| internal/config        | 67.0%    |
+| internal/server        | 30.0%    |
+| cmd                    | 26.2%    |
 
 ---
 

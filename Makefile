@@ -66,25 +66,20 @@ clean:
 	rm -f $(BUILD_DIR)/$(BINARY_NAME)
 	$(GO) clean
 
-# Install to system
+# Install to user local bin
 install:
 	@echo "Building $(BINARY_NAME)..."
 	$(GO) build -ldflags="-s -w -X main.Version=$(or $(VERSION),$(GIT_VERSION)) -X main.BuildDate=$(shell date -u +%Y-%m-%d)" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
-	@echo "Installing $(BINARY_NAME) to /usr/local/bin..."
-	@if [ -w /usr/local/bin ]; then \
-		install -m 755 $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/; \
-	else \
-		echo "Using sudo for installation..."; \
-		sudo install -m 755 $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/; \
-	fi
+	@echo "Installing $(BINARY_NAME) to ~/.local/bin..."
+	@mkdir -p $(HOME)/.local/bin
+	install -m 755 $(BUILD_DIR)/$(BINARY_NAME) $(HOME)/.local/bin/
+	@echo "Installed to ~/.local/bin/$(BINARY_NAME)"
 
-# Uninstall from system
+# Uninstall from user local bin
 uninstall:
-	@echo "Uninstalling $(BINARY_NAME) from /usr/local/bin..."
-	@if [ -w /usr/local/bin ]; then \
-		rm -f /usr/local/bin/$(BINARY_NAME); \
-		echo "Uninstalled successfully"; \
-	else \
+	@echo "Uninstalling $(BINARY_NAME) from ~/.local/bin..."
+	@rm -f $(HOME)/.local/bin/$(BINARY_NAME)
+	@echo "Uninstalled successfully" \
 		echo "Using sudo for uninstallation..."; \
 		sudo rm -f /usr/local/bin/$(BINARY_NAME); \
 		echo "Uninstalled successfully"; \
