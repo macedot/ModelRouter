@@ -1,4 +1,4 @@
-module github.com/macedot/openmodel
+module github.com/macedot/ModelRouter
 
 go 1.26
 

@@ -9,8 +9,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/macedot/openmodel/internal/api/openai"
-	"github.com/macedot/openmodel/internal/endpoints"
+	"github.com/macedot/ModelRouter/internal/api/openai"
+	"github.com/macedot/ModelRouter/internal/endpoints"
 )
 
 // copyRequestOptions copies optional fields from src to dst.

@@ -1,5 +1,5 @@
 #!/bin/sh
-# This script installs openmodel on Linux
+# This script installs ModelRouter on Linux
 # It detects OS and architecture, downloads the binary, and installs it
 
 set -eu
@@ -50,7 +50,7 @@ info "Detected Linux $ARCH"
 
 # Get latest version from GitHub API
 info "Fetching latest release..."
-VERSION=$(curl -s https://api.github.com/repos/macedot/openmodel/releases/latest | grep -o '"tag_name": "[0-9]*' | sed 's/"//g')
+VERSION=$(curl -s https://api.github.com/repos/macedot/ModelRouter/releases/latest | grep -o '"tag_name": "[0-9]*' | sed 's/"//g')
 
 if [ -z "$VERSION" ]; then
     error "Failed to fetch version from GitHub"
@@ -63,27 +63,27 @@ if [ -n "$OPENMODEL_VERSION" ]; then
 fi
 
 # Download URL
-DOWNLOAD_URL="https://github.com/macedot/openmodel/releases/download/${VERSION}/openmodel-linux-${ARCH}"
+DOWNLOAD_URL="https://github.com/macedot/ModelRouter/releases/download/${VERSION}/ModelRouter-linux-${ARCH}"
 
 # Download binary
-info "Downloading openmodel ${VERSION} for ${ARCH}..."
-if ! curl -fsSL --progress-bar -o /usr/local/bin/openmodel "$DOWNLOAD_URL"; then
-    error "Failed to download openmodel"
+info "Downloading ModelRouter ${VERSION} for ${ARCH}..."
+if ! curl -fsSL --progress-bar -o /usr/local/bin/ModelRouter "$DOWNLOAD_URL"; then
+    error "Failed to download ModelRouter"
 fi
 
 # Make executable
-chmod +x /usr/local/bin/openmodel
+chmod +x /usr/local/bin/ModelRouter
 
 # Create systemd service (optional)
 if [ -d /etc/systemd/system ]; then
     info "Creating systemd service..."
-    cat <<EOF | $SUDO tee /etc/systemd/system/openmodel.service > /dev/null
+    cat <<EOF | $SUDO tee /etc/systemd/system/ModelRouter.service > /dev/null
 [Unit]
-Description=openmodel API proxy server
+Description=ModelRouter API proxy server
 After=network.target.wants network-online.target
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/openmodel
+ExecStart=/usr/local/bin/ModelRouter
 Restart=on-failure
 RestartSec=3
 
@@ -91,7 +91,7 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
     
-    info "Systemd service created. Enable with: sudo systemctl enable openmodel"
+    info "Systemd service created. Enable with: sudo systemctl enable ModelRouter"
 fi
 
 # Update README
@@ -101,15 +101,15 @@ info "Updating README..."
 echo ""
 info "Installation complete!"
 info ""
-info "openmodel hasVERSION} has been installed to /usr/local/bin/openmodel"
+info "ModelRouter hasVERSION} has been installed to /usr/local/bin/ModelRouter"
 info ""
-if [ -d /etc/systemd/system/openmodel.service ]; then
+if [ -d /etc/systemd/system/ModelRouter.service ]; then
     info "To start the server:"
-    info "  sudo systemctl start openmodel"
+    info "  sudo systemctl start ModelRouter"
     info ""
     info "To check status:"
-    info "  sudo systemctl status openmodel"
+    info "  sudo systemctl status ModelRouter"
 fi
 info ""
-info "Run 'openmodel' to start the server."
+info "Run 'ModelRouter' to start the server."
 echo ""

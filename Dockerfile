@@ -17,7 +17,7 @@ COPY . .
 # Build the binary with version embedding
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w -X main.Version=${VERSION} -X main.BuildDate=${BUILD_DATE}" \
-    -o /app/openmodel ./cmd
+    -o /app/ModelRouter ./cmd
 
 # Runtime stage - distroless for minimal image
 FROM gcr.io/distroless/static-debian12
@@ -25,7 +25,7 @@ FROM gcr.io/distroless/static-debian12
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/openmodel /app/openmodel
+COPY --from=builder /app/ModelRouter /app/ModelRouter
 
 # Expose default port
 EXPOSE 12345
@@ -33,4 +33,4 @@ EXPOSE 12345
 # Run the binary as non-root user for security
 USER nonroot:nonroot
 
-ENTRYPOINT ["/app/openmodel", "serve"]
+ENTRYPOINT ["/app/ModelRouter", "serve"]

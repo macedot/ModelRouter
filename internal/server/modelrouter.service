@@ -1,9 +1,9 @@
 [Unit]
-Description=openmodel - Ollama-compatible proxy server
+Description=ModelRouter - Ollama-compatible proxy server
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/openmodel
+ExecStart=/usr/local/bin/ModelRouter
 Restart=on-failure
 RestartSec=3
 

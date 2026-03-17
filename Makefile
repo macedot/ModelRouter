@@ -1,19 +1,19 @@
 .PHONY: build test run clean install uninstall tag release help cover check generate docker-build docker-run
 
 # Variables
-BINARY_NAME=openmodel
+BINARY_NAME=ModelRouter
 BUILD_DIR=.
 CMD_DIR=./cmd
 GO:=$(shell which go)
 GOFLAGS=-v
-DOCKER_IMAGE=ghcr.io/macedot/openmodel
+DOCKER_IMAGE=ghcr.io/macedot/ModelRouter
 
 # Get git version for builds
 GIT_VERSION:=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 # Default target
 help:
-	@echo "openmodel - OpenAI-compatible proxy server with multi-provider fallback"
+	@echo "ModelRouter - OpenAI-compatible proxy server with multi-provider fallback"
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""

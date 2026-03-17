@@ -4,7 +4,7 @@ package server
 import (
 	"time"
 
-	"github.com/macedot/openmodel/internal/endpoints"
+	"github.com/macedot/ModelRouter/internal/endpoints"
 )
 
 // HTTP Server defaults

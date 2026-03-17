@@ -10,7 +10,7 @@ import (
 )
 
 func TestKnownSchemaChecksum_IsPinned(t *testing.T) {
-	const schemaURL = "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json"
+	const schemaURL = "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json"
 
 	checksum, ok := knownSchemaChecksums[schemaURL]
 	assert.True(t, ok)
@@ -292,7 +292,7 @@ func TestLoad(t *testing.T) {
 
 	t.Run("no config file returns defaults", func(t *testing.T) {
 		// Force nonexistent config path to test defaults
-		os.Setenv("OPENMODEL_CONFIG", "/nonexistent/.config/openmodel/config.json")
+		os.Setenv("OPENMODEL_CONFIG", "/nonexistent/.config/ModelRouter/config.json")
 		defer os.Unsetenv("OPENMODEL_CONFIG")
 
 		cfg, err := Load("")

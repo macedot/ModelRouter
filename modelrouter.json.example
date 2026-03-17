@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
+  "$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
   "server": {
     "port": 12345,
     "host": "localhost"

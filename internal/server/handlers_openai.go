@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/macedot/openmodel/internal/api/openai"
-	applogger "github.com/macedot/openmodel/internal/logger"
-	"github.com/macedot/openmodel/internal/server/converters"
+	"github.com/macedot/ModelRouter/internal/api/openai"
+	applogger "github.com/macedot/ModelRouter/internal/logger"
+	"github.com/macedot/ModelRouter/internal/server/converters"
 )
 
 // handleV1ChatCompletions handles POST /v1/chat/completions

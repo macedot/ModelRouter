@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testConfigSchema = `"$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",`
+const testConfigSchema = `"$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",`
 
 func TestNewWatcher(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -19,7 +19,7 @@ func TestNewWatcher(t *testing.T) {
 
 	// Create a minimal valid config
 	configContent := `{
-		"$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
+		"$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
 		"server": {"port": 12345, "host": "localhost"},
 		"providers": {
 			"test": {"url": "http://localhost:8080/v1", "api_mode": "openai", "api_key": "test-key"}
@@ -72,7 +72,7 @@ func TestWatcherHandleConfigChange(t *testing.T) {
 
 	// Create initial valid config
 	validConfig := `{
-		"$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
+		"$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
 		"server": {"port": 12345, "host": "localhost"},
 		"providers": {
 			"test": {"url": "http://localhost:8080/v1", "api_mode": "openai", "api_key": "test-key"}
@@ -127,7 +127,7 @@ func TestWatcherHandleConfigChange(t *testing.T) {
 
 	// Test config with invalid provider reference
 	configWithInvalidRef := `{
-		"$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
+		"$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
 		"server": {"port": 12345, "host": "localhost"},
 		"providers": {
 			"test": {"url": "http://localhost:8080/v1", "api_mode": "openai", "api_key": "test-key"}
@@ -160,7 +160,7 @@ func TestWatcherConcurrency(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.json")
 
 	validConfig := `{
-		"$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
+		"$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
 		"server": {"port": 12345, "host": "localhost"},
 		"providers": {
 			"test": {"url": "http://localhost:8080/v1", "api_mode": "openai", "api_key": "test-key"}

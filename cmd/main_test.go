@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/macedot/openmodel/internal/config"
+	"github.com/macedot/ModelRouter/internal/config"
 )
 
 func TestPrintUsage(t *testing.T) {
@@ -21,7 +21,7 @@ func TestPrintUsage(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"openmodel"}
+	os.Args = []string{"ModelRouter"}
 
 	printUsage()
 
@@ -49,7 +49,7 @@ func TestPrintServerUsage(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"openmodel"}
+	os.Args = []string{"ModelRouter"}
 
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	printServerUsage(fs)
@@ -157,7 +157,7 @@ func TestPrintVersion(t *testing.T) {
 
 	output := buf.String()
 
-	if !strings.Contains(output, "openmodel version 1.2.3") {
+	if !strings.Contains(output, "ModelRouter version 1.2.3") {
 		t.Errorf("Expected version output, got: %s", output)
 	}
 	if !strings.Contains(output, "build date: 2024-01-15") {
@@ -192,7 +192,7 @@ func TestPrintVersion_Dev(t *testing.T) {
 
 	output := buf.String()
 
-	if !strings.Contains(output, "openmodel version dev") {
+	if !strings.Contains(output, "ModelRouter version dev") {
 		t.Errorf("Expected dev version output, got: %s", output)
 	}
 	// Build date should not be printed for "unknown"
@@ -264,9 +264,9 @@ func TestRunModels_WithValidConfig(t *testing.T) {
 		}
 	}()
 
-	configPath := filepath.Join(t.TempDir(), "openmodel.json")
+	configPath := filepath.Join(t.TempDir(), "ModelRouter.json")
 	configJSON := `{
-		"$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
+		"$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
 		"server": {"port": 12345, "host": "localhost"},
 		"models": {
 			"smart": {
@@ -389,9 +389,9 @@ func TestRunConfig_WithValidConfig(t *testing.T) {
 		os.Stdout = oldStdout
 	}()
 
-	configPath := filepath.Join(t.TempDir(), "openmodel.json")
+	configPath := filepath.Join(t.TempDir(), "ModelRouter.json")
 	configJSON := `{
-		"$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
+		"$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
 		"server": {"port": 12345, "host": "localhost"},
 		"providers": {},
 		"models": {}
@@ -426,7 +426,7 @@ func TestPrintModelsUsage(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"openmodel"}
+	os.Args = []string{"ModelRouter"}
 
 	fs := flag.NewFlagSet("models", flag.ExitOnError)
 	printModelsUsage(fs)
@@ -453,7 +453,7 @@ func TestPrintConfigUsage(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"openmodel"}
+	os.Args = []string{"ModelRouter"}
 
 	printConfigUsage()
 
@@ -563,7 +563,7 @@ func TestGetConfigPathWithTempHome(t *testing.T) {
 	cfg := &config.Config{}
 	path := cfg.GetConfigPath()
 	// Path should exist but file should not
-	expectedPath := filepath.Join(tmpDir, ".config", "openmodel", "openmodel.json")
+	expectedPath := filepath.Join(tmpDir, ".config", "ModelRouter", "ModelRouter.json")
 	if path != expectedPath {
 		t.Errorf("expected path %q, got %q", expectedPath, path)
 	}
@@ -701,7 +701,7 @@ func TestPrintBenchUsage(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"openmodel"}
+	os.Args = []string{"ModelRouter"}
 
 	fs := newBenchFlagSet()
 	printBenchUsage(fs)
@@ -876,7 +876,7 @@ func TestPrintUsageIncludesBench(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"openmodel"}
+	os.Args = []string{"ModelRouter"}
 
 	printUsage()
 

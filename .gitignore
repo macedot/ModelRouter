@@ -1,6 +1,6 @@
 # Binaries
 *.log
-/openmodel
+/ModelRouter
 
 # IDE files
 .idea/
@@ -22,10 +22,10 @@ coverage.html
 .sisyphus/*
 .opencode
 .worktrees/
-openmodel.json
+ModelRouter.json
 
 # Debug files
-.openmodel_debug/
+.ModelRouter_debug/
 
 **/.env
 
@@ -34,3 +34,6 @@ trace-*.json
 
 # Benchmark files
 bench-*.json
+CLAUDE.md
+AGENTS.md
+docs/

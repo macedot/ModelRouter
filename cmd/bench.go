@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/macedot/openmodel/internal/api/anthropic"
-	"github.com/macedot/openmodel/internal/api/openai"
-	"github.com/macedot/openmodel/internal/config"
-	"github.com/macedot/openmodel/internal/endpoints"
-	"github.com/macedot/openmodel/internal/logger"
-	"github.com/macedot/openmodel/internal/provider"
-	"github.com/macedot/openmodel/internal/server/converters"
+	"github.com/macedot/ModelRouter/internal/api/anthropic"
+	"github.com/macedot/ModelRouter/internal/api/openai"
+	"github.com/macedot/ModelRouter/internal/config"
+	"github.com/macedot/ModelRouter/internal/endpoints"
+	"github.com/macedot/ModelRouter/internal/logger"
+	"github.com/macedot/ModelRouter/internal/provider"
+	"github.com/macedot/ModelRouter/internal/server/converters"
 )
 
 // benchResult holds the result of a single benchmark run

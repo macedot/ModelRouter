@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/macedot/openmodel/internal/api/openai"
-	"github.com/macedot/openmodel/internal/endpoints"
+	"github.com/macedot/ModelRouter/internal/api/openai"
+	"github.com/macedot/ModelRouter/internal/endpoints"
 )
 
 type testServer struct {

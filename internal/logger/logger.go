@@ -1,4 +1,4 @@
-// Package logger provides structured logging for openmodel.
+// Package logger provides structured logging for ModelRouter.
 // It wraps slog with a simple API and supports text, colored text, and JSON formats.
 package logger
 

@@ -9,11 +9,11 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/macedot/openmodel/internal/config"
-	applogger "github.com/macedot/openmodel/internal/logger"
-	"github.com/macedot/openmodel/internal/provider"
-	_ "github.com/macedot/openmodel/internal/server/converters"
-	"github.com/macedot/openmodel/internal/state"
+	"github.com/macedot/ModelRouter/internal/config"
+	applogger "github.com/macedot/ModelRouter/internal/logger"
+	"github.com/macedot/ModelRouter/internal/provider"
+	_ "github.com/macedot/ModelRouter/internal/server/converters"
+	"github.com/macedot/ModelRouter/internal/state"
 	"github.com/sixafter/nanoid"
 )
 
@@ -190,7 +190,7 @@ func (s *Server) registerRoutes(app *fiber.App) {
 // handleRoot handles GET /
 func (s *Server) handleRoot(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"name":    "openmodel",
+		"name":    "ModelRouter",
 		"version": s.version,
 		"status":  "running",
 	})

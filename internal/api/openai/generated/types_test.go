@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	generated "github.com/macedot/openmodel/internal/api/openai/generated"
+	generated "github.com/macedot/ModelRouter/internal/api/openai/generated"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

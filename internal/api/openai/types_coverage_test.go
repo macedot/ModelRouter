@@ -3,7 +3,7 @@ package openai_test
 import (
 	"testing"
 
-	"github.com/macedot/openmodel/internal/api/openai"
+	"github.com/macedot/ModelRouter/internal/api/openai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

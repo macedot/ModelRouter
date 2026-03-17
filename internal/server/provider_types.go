@@ -1,6 +1,6 @@
 package server
 
-import "github.com/macedot/openmodel/internal/provider"
+import "github.com/macedot/ModelRouter/internal/provider"
 
 type requestProvider interface {
 	provider.RawRequester

@@ -7,9 +7,9 @@ import (
 	"fmt"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/macedot/openmodel/internal/config"
-	"github.com/macedot/openmodel/internal/provider"
-	"github.com/macedot/openmodel/internal/server/converters"
+	"github.com/macedot/ModelRouter/internal/config"
+	"github.com/macedot/ModelRouter/internal/provider"
+	"github.com/macedot/ModelRouter/internal/server/converters"
 )
 
 // formatProviderKey creates a unique key for a provider/model combination

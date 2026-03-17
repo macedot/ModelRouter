@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	applogger "github.com/macedot/openmodel/internal/logger"
+	applogger "github.com/macedot/ModelRouter/internal/logger"
 )
 
 // createTraceFileForRequest creates a new trace file for a specific request

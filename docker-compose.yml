@@ -1,13 +1,13 @@
 services:
-  openmodel:
-    #image: ghcr.io/macedot/openmodel:latest
+  ModelRouter:
+    #image: ghcr.io/macedot/ModelRouter:latest
     build: .
-    container_name: openmodel
+    container_name: ModelRouter
     restart: unless-stopped
     ports:
       - "12345:12345"
     volumes:
-      - ${HOME}/.config/openmodel/openmodel.json:/app/openmodel.json:ro
+      - ${HOME}/.config/ModelRouter/ModelRouter.json:/app/ModelRouter.json:ro
     environment:
       # Optional: Override log level/format from config
       - OPENMODEL_LOG_LEVEL=info

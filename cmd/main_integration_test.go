@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/macedot/openmodel/internal/config"
+	"github.com/macedot/ModelRouter/internal/config"
 )
 
 // These tests rely on a real config file in the developer's environment.
@@ -125,7 +125,7 @@ func TestRunConfig_WithRealConfig(t *testing.T) {
 	io.Copy(&buf, r)
 	output := strings.TrimSpace(buf.String())
 
-	if !strings.HasSuffix(output, "openmodel.json") {
-		t.Fatalf("expected config path ending with openmodel.json, got: %s", output)
+	if !strings.HasSuffix(output, "ModelRouter.json") {
+		t.Fatalf("expected config path ending with ModelRouter.json, got: %s", output)
 	}
 }

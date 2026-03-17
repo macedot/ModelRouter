@@ -1,7 +1,7 @@
 // Package server implements the HTTP server and handlers
 package server
 
-import "github.com/macedot/openmodel/internal/server/converters"
+import "github.com/macedot/ModelRouter/internal/server/converters"
 
 // APIFormat represents an API format type (alias to converters.APIFormat)
 type APIFormat = converters.APIFormat

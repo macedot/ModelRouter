@@ -4,7 +4,7 @@ package provider
 import (
 	"context"
 
-	"github.com/macedot/openmodel/internal/api/openai"
+	"github.com/macedot/ModelRouter/internal/api/openai"
 )
 
 // ChatProvider handles chat completion operations

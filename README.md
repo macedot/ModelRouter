@@ -1,4 +1,4 @@
-# 🚀 openmodel
+# 🚀 ModelRouter
 
 A high-performance Go-based HTTP proxy server providing **OpenAI-compatible** and **Anthropic-compatible** API endpoints with intelligent multi-provider fallback, format conversion, and resilience features.
 
@@ -51,16 +51,16 @@ A high-performance Go-based HTTP proxy server providing **OpenAI-compatible** an
 
 ### Quick Install (Linux)
 
-Install openmodel with a single command:
+Install ModelRouter with a single command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/macedot/openmodel/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/macedot/ModelRouter/main/install.sh | sh
 ```
 
 This will:
 - ✓ Detect your system architecture
 - ✓ Download the latest binary from GitHub Releases
-- ✓ Install to `/usr/local/bin/openmodel`
+- ✓ Install to `/usr/local/bin/ModelRouter`
 - ✓ Create a systemd service (optional)
 
 ### 🐳 Docker
@@ -68,7 +68,7 @@ This will:
 Pull the latest image:
 
 ```bash
-docker pull ghcr.io/macedot/openmodel:latest
+docker pull ghcr.io/macedot/ModelRouter:latest
 ```
 
 Run with mounted config:
@@ -76,16 +76,16 @@ Run with mounted config:
 ```bash
 docker run -d \
   -p 12345:12345 \
-  -v ~/.config/openmodel/openmodel.json:/root/.config/openmodel/openmodel.json:ro \
-  ghcr.io/macedot/openmodel:latest
+  -v ~/.config/ModelRouter/ModelRouter.json:/root/.config/ModelRouter/ModelRouter.json:ro \
+  ghcr.io/macedot/ModelRouter:latest
 ```
 
 Or use docker-compose:
 
 ```bash
 # Create config file first
-mkdir -p ~/.config/openmodel
-cp openmodel.json.example ~/.config/openmodel/openmodel.json
+mkdir -p ~/.config/ModelRouter
+cp ModelRouter.json.example ~/.config/ModelRouter/ModelRouter.json
 # Edit config with your API keys
 
 # Start with docker-compose
@@ -97,8 +97,8 @@ docker-compose up -d
 Build from source:
 
 ```bash
-git clone https://github.com/macedot/openmodel.git
-cd openmodel
+git clone https://github.com/macedot/ModelRouter.git
+cd ModelRouter
 make build
 sudo make install
 ```
@@ -107,11 +107,11 @@ sudo make install
 
 ## ⚙️ Configuration
 
-Create `~/.config/openmodel/openmodel.json`:
+Create `~/.config/ModelRouter/ModelRouter.json`:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json",
+  "$schema": "https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json",
   "server": {
     "port": 12345,
     "host": "localhost"
@@ -200,10 +200,10 @@ Create `~/.config/openmodel/openmodel.json`:
 
 ### `serve` (default)
 
-Start the OpenModel server:
+Start the ModelRouter server:
 
 ```bash
-./openmodel serve [--config <path>]
+./ModelRouter serve [--config <path>]
 ```
 
 ### `models`
@@ -211,7 +211,7 @@ Start the OpenModel server:
 List available models:
 
 ```bash
-./openmodel models [--json]
+./ModelRouter models [--json]
 ```
 
 **Example output:**
@@ -232,7 +232,7 @@ Available models:
 Find and validate config file:
 
 ```bash
-./openmodel config
+./ModelRouter config
 ```
 
 Outputs the config file path if valid. Only prints errors if validation fails.
@@ -242,7 +242,7 @@ Outputs the config file path if valid. Only prints errors if validation fails.
 Benchmark models by submitting prompts:
 
 ```bash
-./openmodel bench -prompt <file> [-scope <mode>] [-stream]
+./ModelRouter bench -prompt <file> [-scope <mode>] [-stream]
 ```
 
 **Options:**
@@ -261,10 +261,10 @@ Benchmark models by submitting prompts:
 echo "What is the capital of France?" > prompt.txt
 
 # Benchmark application models
-./openmodel bench -prompt prompt.txt -scope application
+./ModelRouter bench -prompt prompt.txt -scope application
 
 # Benchmark all provider models with streaming
-./openmodel bench -prompt prompt.txt -scope providers -stream
+./ModelRouter bench -prompt prompt.txt -scope providers -stream
 ```
 
 **Output includes:**
@@ -304,11 +304,11 @@ echo "What is the capital of France?" > prompt.txt
 
 ## 🔄 How It Works
 
-OpenModel acts as an intelligent reverse proxy:
+ModelRouter acts as an intelligent reverse proxy:
 
 ```
 ┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│   Client    │────▶│   OpenModel      │────▶│ Provider 1      │
+│   Client    │────▶│   ModelRouter      │────▶│ Provider 1      │
 │ (OpenAI SDK)│     │  (Proxy/Conv)    │     │ (OpenAI/Anthro)│
 └─────────────┘     └──────────────────┘     └─────────────────┘
                               │
@@ -333,7 +333,7 @@ OpenModel acts as an intelligent reverse proxy:
 
 ```bash
 # Start the server
-./openmodel
+./ModelRouter
 
 # In another terminal, use OpenAI-compatible endpoints:
 curl http://localhost:12345/v1/models

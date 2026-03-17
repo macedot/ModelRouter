@@ -11,12 +11,12 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/macedot/openmodel/internal/api/openai"
-	"github.com/macedot/openmodel/internal/config"
-	"github.com/macedot/openmodel/internal/endpoints"
-	"github.com/macedot/openmodel/internal/provider"
-	"github.com/macedot/openmodel/internal/server/converters"
-	"github.com/macedot/openmodel/internal/state"
+	"github.com/macedot/ModelRouter/internal/api/openai"
+	"github.com/macedot/ModelRouter/internal/config"
+	"github.com/macedot/ModelRouter/internal/endpoints"
+	"github.com/macedot/ModelRouter/internal/provider"
+	"github.com/macedot/ModelRouter/internal/server/converters"
+	"github.com/macedot/ModelRouter/internal/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -434,7 +434,7 @@ func TestHandleRoot(t *testing.T) {
 	err = json.Unmarshal(body, &result)
 	require.NoError(t, err)
 
-	assert.Equal(t, "openmodel", result["name"])
+	assert.Equal(t, "ModelRouter", result["name"])
 	assert.Equal(t, "test-version", result["version"])
 	assert.Equal(t, "running", result["status"])
 }

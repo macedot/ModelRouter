@@ -25,7 +25,7 @@ const envAllowRemoteSchemas = "OPENMODEL_ALLOW_REMOTE_SCHEMAS"
 // Known schema checksums for integrity verification
 // Maps schema URLs to their expected SHA256 checksums
 var knownSchemaChecksums = map[string]string{
-	"https://raw.githubusercontent.com/macedot/openmodel/master/openmodel.schema.json": "62ccb4faffd88dad8f58a43f9811623a08a7584d2fa45ac7fe3b4d0560f34055",
+	"https://raw.githubusercontent.com/macedot/ModelRouter/master/ModelRouter.schema.json": "62ccb4faffd88dad8f58a43f9811623a08a7584d2fa45ac7fe3b4d0560f34055",
 }
 
 // jsonErrorWithContext wraps JSON parsing errors with line number and context
@@ -85,7 +85,7 @@ func jsonUnmarshalWithLines(data []byte, v interface{}, context string) error {
 	return nil
 }
 
-// Config represents the openmodel configuration
+// Config represents the ModelRouter configuration
 type Config struct {
 	Server     ServerConfig              `json:"server"`
 	Providers  map[string]ProviderConfig `json:"providers"`
@@ -390,7 +390,7 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 	} else {
 		schemaPath := schemaURL
 		if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
-			schemaPath = filepath.Join(os.Getenv("HOME"), ".config", "openmodel", schemaURL)
+			schemaPath = filepath.Join(os.Getenv("HOME"), ".config", "ModelRouter", schemaURL)
 		}
 		if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
 			schemaPath = filepath.Join(filepath.Dir(os.Args[0]), schemaURL)
@@ -514,12 +514,12 @@ func (c *Config) GetConfigPath() string {
 	if path := os.Getenv("OPENMODEL_CONFIG"); path != "" {
 		return path
 	}
-	// Default to ~/.config/openmodel/openmodel.json
+	// Default to ~/.config/ModelRouter/ModelRouter.json
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(homeDir, ".config", "openmodel", "openmodel.json")
+	return filepath.Join(homeDir, ".config", "ModelRouter", "ModelRouter.json")
 }
 
 // Validate runs the repository-level configuration validations used at startup and reload time.
@@ -546,15 +546,15 @@ func GetConfigPaths() (currentDirPath, userConfigPath string) {
 		return path, ""
 	}
 
-	// Current directory: ./openmodel.json
-	currentDirPath = "openmodel.json"
+	// Current directory: ./ModelRouter.json
+	currentDirPath = "ModelRouter.json"
 
-	// User config: ~/.config/openmodel/openmodel.json
+	// User config: ~/.config/ModelRouter/ModelRouter.json
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return currentDirPath, ""
 	}
-	userConfigPath = filepath.Join(homeDir, ".config", "openmodel", "openmodel.json")
+	userConfigPath = filepath.Join(homeDir, ".config", "ModelRouter", "ModelRouter.json")
 
 	return currentDirPath, userConfigPath
 }

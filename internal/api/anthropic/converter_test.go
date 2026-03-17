@@ -3,7 +3,7 @@ package anthropic
 import (
 	"testing"
 
-	"github.com/macedot/openmodel/internal/api/openai"
+	"github.com/macedot/ModelRouter/internal/api/openai"
 	"github.com/stretchr/testify/assert"
 )
 

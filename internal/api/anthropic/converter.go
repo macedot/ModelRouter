@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/macedot/openmodel/internal/api/openai"
+	"github.com/macedot/ModelRouter/internal/api/openai"
 )
 
 // OpenAIToAnthropicRequest converts OpenAI chat completion request to Anthropic messages request

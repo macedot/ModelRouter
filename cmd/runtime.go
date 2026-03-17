@@ -8,11 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/macedot/openmodel/internal/config"
-	"github.com/macedot/openmodel/internal/logger"
-	"github.com/macedot/openmodel/internal/provider"
-	"github.com/macedot/openmodel/internal/server"
-	"github.com/macedot/openmodel/internal/state"
+	"github.com/macedot/ModelRouter/internal/config"
+	"github.com/macedot/ModelRouter/internal/logger"
+	"github.com/macedot/ModelRouter/internal/provider"
+	"github.com/macedot/ModelRouter/internal/server"
+	"github.com/macedot/ModelRouter/internal/state"
 )
 
 // initProviders creates and initializes all configured providers.
@@ -151,7 +151,7 @@ func runServer(cfg *config.Config) {
 
 	startSignalHandler(ctx, cancel, srv, configPath)
 
-	logger.Info("Starting_openmodel", "host", cfg.Server.Host, "port", cfg.Server.Port)
+	logger.Info("Starting_ModelRouter", "host", cfg.Server.Host, "port", cfg.Server.Port)
 	if err := srv.Start(); err != nil && err != http.ErrServerClosed {
 		logger.Error("Server_error", "error", err)
 	}
