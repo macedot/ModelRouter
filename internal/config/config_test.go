@@ -89,11 +89,11 @@ func TestDefaultConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("log level from environment", func(t *testing.T) {
-		orig := os.Getenv("OPENMODEL_LOG_LEVEL")
-		defer os.Setenv("OPENMODEL_LOG_LEVEL", orig)
+	t.Run("log level from CLI flag", func(t *testing.T) {
+		orig := FlagLogLevel
+		FlagLogLevel = "debug"
+		defer func() { FlagLogLevel = orig }()
 
-		os.Setenv("OPENMODEL_LOG_LEVEL", "debug")
 		cfg := DefaultConfig()
 		if cfg.LogLevel != "debug" {
 			t.Errorf("expected log level debug, got %s", cfg.LogLevel)
@@ -272,28 +272,19 @@ func TestLoadFromPath(t *testing.T) {
 
 // TestLoad tests the Load function with various scenarios
 func TestLoad(t *testing.T) {
-	origConfig := os.Getenv("OPENMODEL_CONFIG")
-	origLogLevel := os.Getenv("OPENMODEL_LOG_LEVEL")
+	origConfig := FlagConfigPath
+	origLogLevel := FlagLogLevel
 	defer func() {
-		if origConfig != "" {
-			os.Setenv("OPENMODEL_CONFIG", origConfig)
-		} else {
-			os.Unsetenv("OPENMODEL_CONFIG")
-		}
-		if origLogLevel != "" {
-			os.Setenv("OPENMODEL_LOG_LEVEL", origLogLevel)
-		} else {
-			os.Unsetenv("OPENMODEL_LOG_LEVEL")
-		}
+		FlagConfigPath = origConfig
+		FlagLogLevel = origLogLevel
 	}()
 
-	os.Unsetenv("OPENMODEL_CONFIG")
-	os.Unsetenv("OPENMODEL_LOG_LEVEL")
+	FlagConfigPath = ""
+	FlagLogLevel = ""
 
 	t.Run("no config file returns defaults", func(t *testing.T) {
 		// Force nonexistent config path to test defaults
-		os.Setenv("OPENMODEL_CONFIG", "/nonexistent/.config/ModelRouter/config.json")
-		defer os.Unsetenv("OPENMODEL_CONFIG")
+		FlagConfigPath = "/nonexistent/.config/ModelRouter/config.json"
 
 		cfg, err := Load("")
 		if err != nil {
@@ -306,7 +297,7 @@ func TestLoad(t *testing.T) {
 	})
 
 	t.Run("config file not found returns defaults", func(t *testing.T) {
-		os.Setenv("OPENMODEL_CONFIG", "/nonexistent/config.json")
+		FlagConfigPath = "/nonexistent/config.json"
 
 		cfg, err := Load("")
 		if err != nil {
@@ -327,9 +318,8 @@ func TestLoad(t *testing.T) {
 			t.Fatalf("failed to write temp config: %v", err)
 		}
 
-		os.Setenv("OPENMODEL_CONFIG", configPath)
-
-		_, err := Load("")
+		// Pass path directly to Load() instead of using env var
+		_, err := Load(configPath)
 		if err == nil {
 			t.Error("Load() expected error for missing $schema field")
 		}
@@ -342,9 +332,8 @@ func TestLoad(t *testing.T) {
 			t.Fatalf("failed to write temp config: %v", err)
 		}
 
-		os.Setenv("OPENMODEL_CONFIG", configPath)
-
-		_, err := Load("")
+		// Pass path directly to Load() instead of using env var
+		_, err := Load(configPath)
 		if err == nil {
 			t.Error("Load() expected error for invalid JSON")
 		}
@@ -353,25 +342,19 @@ func TestLoad(t *testing.T) {
 
 // TestGetConfigPath tests the GetConfigPath function
 func TestGetConfigPath(t *testing.T) {
-	orig := os.Getenv("OPENMODEL_CONFIG")
-	defer func() {
-		if orig != "" {
-			os.Setenv("OPENMODEL_CONFIG", orig)
-		} else {
-			os.Unsetenv("OPENMODEL_CONFIG")
-		}
-	}()
+	orig := FlagConfigPath
+	defer func() { FlagConfigPath = orig }()
 
-	t.Run("explicit config path from env", func(t *testing.T) {
-		os.Setenv("OPENMODEL_CONFIG", "/custom/path/config.json")
+	t.Run("explicit config path from CLI flag", func(t *testing.T) {
+		FlagConfigPath = "/custom/path/config.json"
 		path := GetConfigPath()
 		if path != "/custom/path/config.json" {
 			t.Errorf("GetConfigPath() = %q, want /custom/path/config.json", path)
 		}
 	})
 
-	t.Run("default path when no env set", func(t *testing.T) {
-		os.Unsetenv("OPENMODEL_CONFIG")
+	t.Run("default path when no flag set", func(t *testing.T) {
+		FlagConfigPath = ""
 		path := GetConfigPath()
 		if path == "" {
 			t.Error("GetConfigPath() returned empty path")
@@ -384,17 +367,11 @@ func TestGetConfigPath(t *testing.T) {
 
 // TestGetLogLevel tests the getLogLevel function
 func TestGetLogLevel(t *testing.T) {
-	orig := os.Getenv("OPENMODEL_LOG_LEVEL")
-	defer func() {
-		if orig != "" {
-			os.Setenv("OPENMODEL_LOG_LEVEL", orig)
-		} else {
-			os.Unsetenv("OPENMODEL_LOG_LEVEL")
-		}
-	}()
+	orig := FlagLogLevel
+	defer func() { FlagLogLevel = orig }()
 
-	t.Run("from environment", func(t *testing.T) {
-		os.Setenv("OPENMODEL_LOG_LEVEL", "debug")
+	t.Run("from CLI flag", func(t *testing.T) {
+		FlagLogLevel = "debug"
 		level := getLogLevel()
 		if level != "debug" {
 			t.Errorf("getLogLevel() = %q, want debug", level)
@@ -402,7 +379,7 @@ func TestGetLogLevel(t *testing.T) {
 	})
 
 	t.Run("default when not set", func(t *testing.T) {
-		os.Unsetenv("OPENMODEL_LOG_LEVEL")
+		FlagLogLevel = ""
 		level := getLogLevel()
 		if level != "info" {
 			t.Errorf("getLogLevel() = %q, want info", level)
@@ -536,15 +513,9 @@ func TestGetSchemaCompilerConcurrent(t *testing.T) {
 
 // TestLoad_SchemaValidationFailure tests that schema validation failures are detected
 func TestLoad_SchemaValidationFailure(t *testing.T) {
-	// Save original env
-	origConfig := os.Getenv("OPENMODEL_CONFIG")
-	defer func() {
-		if origConfig != "" {
-			os.Setenv("OPENMODEL_CONFIG", origConfig)
-		} else {
-			os.Unsetenv("OPENMODEL_CONFIG")
-		}
-	}()
+	// Save original flag values
+	origConfig := FlagConfigPath
+	defer func() { FlagConfigPath = origConfig }()
 
 	// Create temp directory with custom schema that validates port minimum
 	tmpDir := t.TempDir()
@@ -577,9 +548,8 @@ func TestLoad_SchemaValidationFailure(t *testing.T) {
 	err = os.WriteFile(configPath, []byte(configContent), 0644)
 	assert.NoError(t, err)
 
-	os.Setenv("OPENMODEL_CONFIG", configPath)
-
-	_, err = Load("")
+	// Pass path directly to Load() instead of using env var
+	_, err = Load(configPath)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "validation failed")
 }

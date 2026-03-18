@@ -7,11 +7,7 @@ services:
     ports:
       - "12345:12345"
     volumes:
-      - ${HOME}/.config/ModelRouter/ModelRouter.json:/app/ModelRouter.json:ro
-    environment:
-      # Optional: Override log level/format from config
-      - OPENMODEL_LOG_LEVEL=info
-      - OPENMODEL_LOG_FORMAT=text
+      - /root/.config/ModelRouter/ModelRouter.json:/app/ModelRouter.json:ro
     healthcheck:
       test:
         [

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,9 +19,29 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-// Environment variable to control remote schema fetching
-// Set to "false" or "0" to disallow remote schemas (security hardening)
-const envAllowRemoteSchemas = "OPENMODEL_ALLOW_REMOTE_SCHEMAS"
+// CLI flags for configuration (set via command line)
+var (
+	FlagConfigPath  string
+	FlagLogLevel    string
+	FlagAllowRemote bool
+)
+
+// init registers CLI flags
+func init() {
+	flag.StringVar(&FlagConfigPath, "config", "", "Path to config file")
+	flag.StringVar(&FlagLogLevel, "log-level", "", "Log level (debug, info, warn, error)")
+	flag.BoolVar(&FlagAllowRemote, "allow-remote-schemas", true, "Allow fetching remote JSON schemas")
+}
+
+// SetFlagConfigPathForTest sets the config path (for testing only)
+func SetFlagConfigPathForTest(path string) {
+	FlagConfigPath = path
+}
+
+// SetFlagLogLevelForTest sets the log level (for testing only)
+func SetFlagLogLevelForTest(level string) {
+	FlagLogLevel = level
+}
 
 // Known schema checksums for integrity verification
 // Maps schema URLs to their expected SHA256 checksums
@@ -353,7 +374,7 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 	if isRemote {
 		// Check if remote schemas are allowed
 		if !isRemoteSchemaAllowed() {
-			return nil, fmt.Errorf("remote schema fetching is disabled (set %s=true to allow)", envAllowRemoteSchemas)
+			return nil, fmt.Errorf("remote schema fetching is disabled (use --allow-remote-schemas=true to enable)")
 		}
 
 		// Warn about remote schema fetching
@@ -390,7 +411,8 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 	} else {
 		schemaPath := schemaURL
 		if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
-			schemaPath = filepath.Join(os.Getenv("HOME"), ".config", "ModelRouter", schemaURL)
+			homeDir, _ := os.UserHomeDir()
+			schemaPath = filepath.Join(homeDir, ".config", "ModelRouter", schemaURL)
 		}
 		if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
 			schemaPath = filepath.Join(filepath.Dir(os.Args[0]), schemaURL)
@@ -419,11 +441,7 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 
 // isRemoteSchemaAllowed checks if remote schema fetching is allowed
 func isRemoteSchemaAllowed() bool {
-	val := os.Getenv(envAllowRemoteSchemas)
-	if val == "" {
-		return true // Default: allow for backward compatibility
-	}
-	return strings.ToLower(val) != "false" && val != "0"
+	return FlagAllowRemote
 }
 
 // readAllWithLimit reads from reader with a size limit to prevent memory exhaustion
@@ -505,14 +523,14 @@ func expandProviderEnvVars(pc *ProviderConfig) {
 }
 
 // GetConfigPath returns the path to the config file
-// Uses the stored path if available, otherwise calculates from environment
+// Uses the stored path if available, otherwise uses CLI flag or default
 func (c *Config) GetConfigPath() string {
 	if c.configPath != "" {
 		return c.configPath
 	}
-	// Fallback: check for explicit config path in env
-	if path := os.Getenv("OPENMODEL_CONFIG"); path != "" {
-		return path
+	// Fallback: check CLI flag first
+	if FlagConfigPath != "" {
+		return FlagConfigPath
 	}
 	// Default to ~/.config/ModelRouter/ModelRouter.json
 	homeDir, err := os.UserHomeDir()
@@ -541,9 +559,9 @@ func GetConfigPath() string {
 // GetConfigPaths returns both config paths: current directory and user config
 // Current directory has higher priority
 func GetConfigPaths() (currentDirPath, userConfigPath string) {
-	// Check for explicit config path in env
-	if path := os.Getenv("OPENMODEL_CONFIG"); path != "" {
-		return path, ""
+	// Check CLI flag first
+	if FlagConfigPath != "" {
+		return FlagConfigPath, ""
 	}
 
 	// Current directory: ./ModelRouter.json
@@ -559,10 +577,10 @@ func GetConfigPaths() (currentDirPath, userConfigPath string) {
 	return currentDirPath, userConfigPath
 }
 
-// getLogLevel returns the log level from environment or default
+// getLogLevel returns the log level from CLI flag or default
 func getLogLevel() string {
-	if level := os.Getenv("OPENMODEL_LOG_LEVEL"); level != "" {
-		return level
+	if FlagLogLevel != "" {
+		return FlagLogLevel
 	}
 	return "info"
 }
@@ -840,9 +858,9 @@ func parseConfig(data []byte, validateSchema bool) (*Config, error) {
 		cfg.Providers[name] = provider
 	}
 
-	// Allow env vars to override config file values
-	if level := os.Getenv("OPENMODEL_LOG_LEVEL"); level != "" {
-		cfg.LogLevel = level
+	// Apply CLI log level override
+	if FlagLogLevel != "" {
+		cfg.LogLevel = FlagLogLevel
 	}
 
 	return cfg, nil

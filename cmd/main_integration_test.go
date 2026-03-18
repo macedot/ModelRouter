@@ -23,16 +23,10 @@ func TestRunModels_WithRealConfig(t *testing.T) {
 		t.Skip("config file not found, skipping test")
 	}
 
-	oldEnv := os.Getenv("OPENMODEL_CONFIG")
-	defer func() {
-		if oldEnv != "" {
-			os.Setenv("OPENMODEL_CONFIG", oldEnv)
-		} else {
-			os.Unsetenv("OPENMODEL_CONFIG")
-		}
-	}()
+	oldConfig := config.FlagConfigPath
+	defer func() { config.FlagConfigPath = oldConfig }()
 
-	os.Setenv("OPENMODEL_CONFIG", configPath)
+	config.FlagConfigPath = configPath
 
 	oldStdout := os.Stdout
 	defer func() { os.Stdout = oldStdout }()
@@ -62,16 +56,10 @@ func TestRunModels_JSONWithRealConfig(t *testing.T) {
 		t.Skip("config file not found, skipping test")
 	}
 
-	oldEnv := os.Getenv("OPENMODEL_CONFIG")
-	defer func() {
-		if oldEnv != "" {
-			os.Setenv("OPENMODEL_CONFIG", oldEnv)
-		} else {
-			os.Unsetenv("OPENMODEL_CONFIG")
-		}
-	}()
+	oldConfig := config.FlagConfigPath
+	defer func() { config.FlagConfigPath = oldConfig }()
 
-	os.Setenv("OPENMODEL_CONFIG", configPath)
+	config.FlagConfigPath = configPath
 
 	oldStdout := os.Stdout
 	defer func() { os.Stdout = oldStdout }()
@@ -101,16 +89,10 @@ func TestRunConfig_WithRealConfig(t *testing.T) {
 		t.Skip("config file not found, skipping test")
 	}
 
-	oldEnv := os.Getenv("OPENMODEL_CONFIG")
-	defer func() {
-		if oldEnv != "" {
-			os.Setenv("OPENMODEL_CONFIG", oldEnv)
-		} else {
-			os.Unsetenv("OPENMODEL_CONFIG")
-		}
-	}()
+	oldConfig := config.FlagConfigPath
+	defer func() { config.FlagConfigPath = oldConfig }()
 
-	os.Setenv("OPENMODEL_CONFIG", configPath)
+	config.FlagConfigPath = configPath
 
 	oldStdout := os.Stdout
 	defer func() { os.Stdout = oldStdout }()
