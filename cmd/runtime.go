@@ -43,17 +43,13 @@ func loadAndValidateConfig(configPath string) (*config.Config, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	logFormat := config.GetLogFormat()
-	if err := logger.Init(cfg.LogLevel, logFormat); err != nil {
+	if err := logger.Init(cfg.LogLevel, ""); err != nil {
 		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
 	logger.Info("Config loaded", "config_path", cfg.GetConfigPath())
 	if cfg.LogLevel != "" && cfg.LogLevel != "info" {
 		logger.Debug("Log level set", "level", cfg.LogLevel)
-	}
-	if logFormat != "" {
-		logger.Debug("Log format set", "format", logFormat)
 	}
 
 	if err := cfg.Validate(); err != nil {

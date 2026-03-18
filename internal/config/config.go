@@ -567,14 +567,6 @@ func getLogLevel() string {
 	return "info"
 }
 
-// GetLogFormat returns the log format from environment or default
-func GetLogFormat() string {
-	if format := os.Getenv("OPENMODEL_LOG_FORMAT"); format != "" {
-		return format
-	}
-	return ""
-}
-
 // Load loads configuration from the specified path or default locations.
 // If path is empty, it merges current directory config with user config.
 // Current directory config has higher priority when merging.
