@@ -6,7 +6,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gofiber/fiber/v2 v2.52.12
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
-	github.com/sixafter/nanoid v1.63.1
+	github.com/sixafter/nanoid v1.64.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.41.0
 )
@@ -21,12 +21,10 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.21 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/sixafter/aes-ctr-drbg v1.17.0 // indirect
-	github.com/sixafter/prng-chacha v1.15.0 // indirect
+	github.com/sixafter/aes-ctr-drbg v1.18.0 // indirect
+	github.com/sixafter/prng-chacha v1.16.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.69.0 // indirect
-	github.com/valyala/tcplisten v1.0.0 // indirect
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
