@@ -1,12 +1,12 @@
-// Package main provides the command-line interface for ModelRouter.
+// Package main provides the command-line interface for modelrouter.
 //
 // Usage:
 //
-//	ModelRouter serve     Start the ModelRouter server (default)
-//	ModelRouter models    List available models
-//	ModelRouter config    Find and validate config file
-//	ModelRouter bench     Benchmark models with prompts
-//	ModelRouter -h        Show help
+//	modelrouter serve     Start the modelrouter server (default)
+//	modelrouter models    List available models
+//	modelrouter config    Find and validate config file
+//	modelrouter bench     Benchmark models with prompts
+//	modelrouter -h        Show help
 package main
 
 import (
@@ -46,7 +46,7 @@ func newBenchFlagSet() *flag.FlagSet {
 // newServeFlagSet creates a FlagSet for the serve command.
 func newServeFlagSet() *flag.FlagSet {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	fs.String("config", "", "Path to config file (default: ~/.config/ModelRouter/config.json)")
+	fs.String("config", "", "Path to config file (default: ~/.config/modelrouter/config.json)")
 	fs.Bool("h", false, "Show help")
 	return fs
 }
@@ -100,7 +100,7 @@ func main() {
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "Usage: %s [command]\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "\nCommands:\n")
-	fmt.Fprintf(os.Stderr, "  serve    Start the ModelRouter server\n")
+	fmt.Fprintf(os.Stderr, "  serve    Start the modelrouter server\n")
 	fmt.Fprintf(os.Stderr, "  models   List available models\n")
 	fmt.Fprintf(os.Stderr, "  config   Find and validate config file\n")
 	fmt.Fprintf(os.Stderr, "  bench    Benchmark models with prompts\n")
@@ -108,12 +108,12 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  -h, --help    Show help\n")
 	fmt.Fprintf(os.Stderr, "  -v, --version Show version\n")
 	fmt.Fprintf(os.Stderr, "\nServe options:\n")
-	fmt.Fprintf(os.Stderr, "  --config <path>   Path to config file (default: ~/.config/ModelRouter/config.json)\n")
+	fmt.Fprintf(os.Stderr, "  --config <path>   Path to config file (default: ~/.config/modelrouter/config.json)\n")
 	fmt.Fprintf(os.Stderr, "\nRun '%s <command> -h' for more information on a command.\n", os.Args[0])
 }
 
 func printVersion() {
-	fmt.Printf("ModelRouter version %s\n", Version)
+	fmt.Printf("modelrouter version %s\n", Version)
 	if BuildDate != "unknown" {
 		fmt.Printf("build date: %s\n", BuildDate)
 	}

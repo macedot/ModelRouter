@@ -46,7 +46,7 @@ func SetFlagLogLevelForTest(level string) {
 // Known schema checksums for integrity verification
 // Maps schema URLs to their expected SHA256 checksums
 var knownSchemaChecksums = map[string]string{
-	"https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json": "62ccb4faffd88dad8f58a43f9811623a08a7584d2fa45ac7fe3b4d0560f34055",
+	"https://raw.githubusercontent.com/macedot/modelrouter/master/modelrouter.schema.json": "62ccb4faffd88dad8f58a43f9811623a08a7584d2fa45ac7fe3b4d0560f34055",
 }
 
 // jsonErrorWithContext wraps JSON parsing errors with line number and context
@@ -106,7 +106,7 @@ func jsonUnmarshalWithLines(data []byte, v interface{}, context string) error {
 	return nil
 }
 
-// Config represents the ModelRouter configuration
+// Config represents the modelrouter configuration
 type Config struct {
 	Server     ServerConfig              `json:"server"`
 	Providers  map[string]ProviderConfig `json:"providers"`
@@ -412,7 +412,7 @@ func getSchemaCompiler(schemaURL string) (*jsonschema.Compiler, error) {
 		schemaPath := schemaURL
 		if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
 			homeDir, _ := os.UserHomeDir()
-			schemaPath = filepath.Join(homeDir, ".config", "ModelRouter", schemaURL)
+			schemaPath = filepath.Join(homeDir, ".config", "modelrouter", schemaURL)
 		}
 		if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
 			schemaPath = filepath.Join(filepath.Dir(os.Args[0]), schemaURL)
@@ -532,12 +532,12 @@ func (c *Config) GetConfigPath() string {
 	if FlagConfigPath != "" {
 		return FlagConfigPath
 	}
-	// Default to ~/.config/ModelRouter/ModelRouter.json
+	// Default to ~/.config/modelrouter/modelrouter.json
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(homeDir, ".config", "ModelRouter", "ModelRouter.json")
+	return filepath.Join(homeDir, ".config", "modelrouter", "modelrouter.json")
 }
 
 // Validate runs the repository-level configuration validations used at startup and reload time.
@@ -564,15 +564,15 @@ func GetConfigPaths() (currentDirPath, userConfigPath string) {
 		return FlagConfigPath, ""
 	}
 
-	// Current directory: ./ModelRouter.json
-	currentDirPath = "ModelRouter.json"
+	// Current directory: ./modelrouter.json
+	currentDirPath = "modelrouter.json"
 
-	// User config: ~/.config/ModelRouter/ModelRouter.json
+	// User config: ~/.config/modelrouter/modelrouter.json
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return currentDirPath, ""
 	}
-	userConfigPath = filepath.Join(homeDir, ".config", "ModelRouter", "ModelRouter.json")
+	userConfigPath = filepath.Join(homeDir, ".config", "modelrouter", "modelrouter.json")
 
 	return currentDirPath, userConfigPath
 }

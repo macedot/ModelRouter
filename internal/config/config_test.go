@@ -10,7 +10,7 @@ import (
 )
 
 func TestKnownSchemaChecksum_IsPinned(t *testing.T) {
-	const schemaURL = "https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json"
+	const schemaURL = "https://raw.githubusercontent.com/macedot/modelrouter/master/modelrouter.schema.json"
 
 	checksum, ok := knownSchemaChecksums[schemaURL]
 	assert.True(t, ok)
@@ -284,7 +284,7 @@ func TestLoad(t *testing.T) {
 
 	t.Run("no config file returns defaults", func(t *testing.T) {
 		// Force nonexistent config path to test defaults
-		FlagConfigPath = "/nonexistent/.config/ModelRouter/config.json"
+		FlagConfigPath = "/nonexistent/.config/modelrouter/config.json"
 
 		cfg, err := Load("")
 		if err != nil {

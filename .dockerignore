@@ -12,6 +12,6 @@
 !internal/**/*.go
 
 # Only include these if needed
-!ModelRouter.schema.json
-!ModelRouter.json.example
+!modelrouter.schema.json
+!modelrouter.json.example
 !LICENSE

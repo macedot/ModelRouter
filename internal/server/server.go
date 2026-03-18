@@ -195,7 +195,7 @@ func (s *Server) registerRoutes(app *fiber.App) {
 // handleRoot handles GET /
 func (s *Server) handleRoot(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"name":    "ModelRouter",
+		"name":    "modelrouter",
 		"version": s.version,
 		"status":  "running",
 	})

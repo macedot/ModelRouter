@@ -21,7 +21,7 @@ func TestPrintUsage(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"ModelRouter"}
+	os.Args = []string{"modelrouter"}
 
 	printUsage()
 
@@ -49,7 +49,7 @@ func TestPrintServerUsage(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"ModelRouter"}
+	os.Args = []string{"modelrouter"}
 
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	printServerUsage(fs)
@@ -157,7 +157,7 @@ func TestPrintVersion(t *testing.T) {
 
 	output := buf.String()
 
-	if !strings.Contains(output, "ModelRouter version 1.2.3") {
+	if !strings.Contains(output, "modelrouter version 1.2.3") {
 		t.Errorf("Expected version output, got: %s", output)
 	}
 	if !strings.Contains(output, "build date: 2024-01-15") {
@@ -192,7 +192,7 @@ func TestPrintVersion_Dev(t *testing.T) {
 
 	output := buf.String()
 
-	if !strings.Contains(output, "ModelRouter version dev") {
+	if !strings.Contains(output, "modelrouter version dev") {
 		t.Errorf("Expected dev version output, got: %s", output)
 	}
 	// Build date should not be printed for "unknown"
@@ -245,9 +245,9 @@ func TestRunModels_WithValidConfig(t *testing.T) {
 	oldConfig := config.FlagConfigPath
 	defer func() { config.FlagConfigPath = oldConfig }()
 
-	configPath := filepath.Join(t.TempDir(), "ModelRouter.json")
+	configPath := filepath.Join(t.TempDir(), "modelrouter.json")
 	configJSON := `{
-		"$schema": "https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json",
+		"$schema": "https://raw.githubusercontent.com/macedot/modelrouter/master/modelrouter.schema.json",
 		"server": {"port": 12345, "host": "localhost"},
 		"models": {
 			"smart": {
@@ -348,9 +348,9 @@ func TestRunConfig_WithValidConfig(t *testing.T) {
 		os.Stdout = oldStdout
 	}()
 
-	configPath := filepath.Join(t.TempDir(), "ModelRouter.json")
+	configPath := filepath.Join(t.TempDir(), "modelrouter.json")
 	configJSON := `{
-		"$schema": "https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json",
+		"$schema": "https://raw.githubusercontent.com/macedot/modelrouter/master/modelrouter.schema.json",
 		"server": {"port": 12345, "host": "localhost"},
 		"providers": {},
 		"models": {}
@@ -385,7 +385,7 @@ func TestPrintModelsUsage(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"ModelRouter"}
+	os.Args = []string{"modelrouter"}
 
 	fs := flag.NewFlagSet("models", flag.ExitOnError)
 	printModelsUsage(fs)
@@ -412,7 +412,7 @@ func TestPrintConfigUsage(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"ModelRouter"}
+	os.Args = []string{"modelrouter"}
 
 	printConfigUsage()
 
@@ -627,7 +627,7 @@ func TestPrintBenchUsage(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"ModelRouter"}
+	os.Args = []string{"modelrouter"}
 
 	fs := newBenchFlagSet()
 	printBenchUsage(fs)
@@ -802,7 +802,7 @@ func TestPrintUsageIncludesBench(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"ModelRouter"}
+	os.Args = []string{"modelrouter"}
 
 	printUsage()
 

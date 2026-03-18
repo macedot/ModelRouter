@@ -107,7 +107,7 @@ func TestRunConfig_WithRealConfig(t *testing.T) {
 	io.Copy(&buf, r)
 	output := strings.TrimSpace(buf.String())
 
-	if !strings.HasSuffix(output, "ModelRouter.json") {
-		t.Fatalf("expected config path ending with ModelRouter.json, got: %s", output)
+	if !strings.HasSuffix(output, "modelrouter.json") {
+		t.Fatalf("expected config path ending with modelrouter.json, got: %s", output)
 	}
 }

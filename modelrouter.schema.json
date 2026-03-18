@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json",
-  "title": "ModelRouter Configuration",
-  "description": "Configuration schema for ModelRouter server",
+  "$id": "https://raw.githubusercontent.com/macedot/modelrouter/master/modelrouter.schema.json",
+  "title": "modelrouter Configuration",
+  "description": "Configuration schema for modelrouter server",
   "type": "object",
   "required": ["server", "providers", "models"],
   "properties": {

@@ -434,7 +434,7 @@ func TestHandleRoot(t *testing.T) {
 	err = json.Unmarshal(body, &result)
 	require.NoError(t, err)
 
-	assert.Equal(t, "ModelRouter", result["name"])
+	assert.Equal(t, "modelrouter", result["name"])
 	assert.Equal(t, "test-version", result["version"])
 	assert.Equal(t, "running", result["status"])
 }

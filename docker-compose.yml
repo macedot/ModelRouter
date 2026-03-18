@@ -1,13 +1,13 @@
 services:
-  ModelRouter:
+  modelrouter:
     #image: ghcr.io/macedot/modelrouter:latest
     build: .
-    container_name: ModelRouter
+    container_name: modelrouter
     restart: unless-stopped
     ports:
       - "12345:12345"
     volumes:
-      - /root/.config/ModelRouter/ModelRouter.json:/app/ModelRouter.json:ro
+      - /root/.config/modelrouter/modelrouter.json:/app/modelrouter.json:ro
     healthcheck:
       test:
         [

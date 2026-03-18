@@ -41,14 +41,14 @@ jobs:
 
       - name: Build amd64
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o ModelRouter-linux-amd64 ./cmd
-          tar -czf ModelRouter-linux-amd64.tar.gz ModelRouter-linux-amd64
-      
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o modelrouter-linux-amd64 ./cmd
+          tar -czf modelrouter-linux-amd64.tar.gz modelrouter-linux-amd64
+
       - name: Build arm64
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o ModelRouter-linux-arm64 ./cmd
-          tar -czf ModelRouter-linux-arm64.tar.gz ModelRouter-linux-arm64
-      
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o modelrouter-linux-arm64 ./cmd
+          tar -czf modelrouter-linux-arm64.tar.gz modelrouter-linux-arm64
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -57,8 +57,8 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            ModelRouter-linux-amd64.tar.gz
-            ModelRouter-linux-arm64.tar.gz
+            modelrouter-linux-amd64.tar.gz
+            modelrouter-linux-arm64.tar.gz
 
   docker:
     runs-on: ubuntu-latest
@@ -90,8 +90,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ModelRouter:${{ steps.version.outputs.VERSION }}
-            ghcr.io/${{ github.repository_owner }}/ModelRouter:latest
+            ghcr.io/${{ github.repository_owner }}/modelrouter:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/modelrouter:latest
           build-args: |
             VERSION=${{ steps.version.outputs.VERSION }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
@@ -131,17 +131,17 @@ jobs:
           cosign sign \
             --yes \
             -a "ref=https://github.com/${{ github.repository_owner }}" \
-            --output-signature ModelRouter-${{ steps.version.outputs.VERSION }}.amd64.sig \
-            "ghcr.io/${{ github.repository_owner }}/ModelRouter:${{ steps.version.outputs.VERSION }}"
+            --output-signature modelrouter-${{ steps.version.outputs.VERSION }}.amd64.sig \
+            "ghcr.io/${{ github.repository_owner }}/modelrouter:${{ steps.version.outputs.VERSION }}"
           cosign sign \
             --yes \
             -a "ref=https://github.com/${{ github.repository_owner }}" \
-            --output-signature ModelRouter-${{ steps.version.outputs.VERSION }}.latest.sig \
-            "ghcr.io/${{ github.repository_owner }}/ModelRouter:latest"
+            --output-signature modelrouter-${{ steps.version.outputs.VERSION }}.latest.sig \
+            "ghcr.io/${{ github.repository_owner }}/modelrouter:latest"
 
       - name: Generate SBOM
         run: |
-          syft ghcr.io/${{ github.repository_owner }}/ModelRouter:${{ steps.version.outputs.VERSION }} \
+          syft ghcr.io/${{ github.repository_owner }}/modelrouter:${{ steps.version.outputs.VERSION }} \
             --output spdx-json \
             --file sbom-${{ steps.version.outputs.VERSION }}.spdx.json
 
@@ -152,6 +152,6 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: |
             sbom-${{ steps.version.outputs.VERSION }}.spdx.json
-            ModelRouter-${{ steps.version.outputs.VERSION }}.amd64.sig
-            ModelRouter-${{ steps.version.outputs.VERSION }}.latest.sig
+            modelrouter-${{ steps.version.outputs.VERSION }}.amd64.sig
+            modelrouter-${{ steps.version.outputs.VERSION }}.latest.sig
           generate_release_notes: false

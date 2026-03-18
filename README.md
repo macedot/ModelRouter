@@ -1,4 +1,4 @@
-# 🚀 ModelRouter
+# 🚀 modelrouter
 
 A high-performance Go-based HTTP proxy server providing **OpenAI-compatible** and **Anthropic-compatible** API endpoints with intelligent multi-provider fallback, format conversion, and resilience features.
 
@@ -7,7 +7,7 @@ A high-performance Go-based HTTP proxy server providing **OpenAI-compatible** an
 ## ✨ Features
 
 ### 🔄 API Compatibility
-- **ModelRouter API**: Our model listing
+- **modelrouter API**: Our model listing
   - `/models` - List our configured models
 - **OpenAI-Compatible API**: Works seamlessly with any OpenAI client SDK
   - `/v1/models` - List available models
@@ -54,7 +54,7 @@ A high-performance Go-based HTTP proxy server providing **OpenAI-compatible** an
 
 ### Quick Install (Linux)
 
-Install ModelRouter with a single command:
+Install modelrouter with a single command:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/macedot/modelrouter/main/install.sh | sh
@@ -63,7 +63,7 @@ curl -fsSL https://raw.githubusercontent.com/macedot/modelrouter/main/install.sh
 This will:
 - ✓ Detect your system architecture
 - ✓ Download the latest binary from GitHub Releases
-- ✓ Install to `~/.local/bin/ModelRouter`
+- ✓ Install to `~/.local/bin/modelrouter`
 - ✓ Create a user-level systemd service (optional)
 
 ### 🐳 Docker
@@ -79,7 +79,7 @@ Run with mounted config:
 ```bash
 docker run -d \
   -p 12345:12345 \
-  -v ~/.config/ModelRouter/ModelRouter.json:/root/.config/ModelRouter/ModelRouter.json:ro \
+  -v ~/.config/modelrouter/modelrouter.json:/root/.config/modelrouter/modelrouter.json:ro \
   ghcr.io/macedot/modelrouter:latest
 ```
 
@@ -87,8 +87,8 @@ Or use docker-compose:
 
 ```bash
 # Create config file first
-mkdir -p ~/.config/ModelRouter
-cp ModelRouter.json.example ~/.config/ModelRouter/ModelRouter.json
+mkdir -p ~/.config/modelrouter
+cp modelrouter.json.example ~/.config/modelrouter/modelrouter.json
 # Edit config with your API keys
 
 # Start with docker-compose
@@ -101,7 +101,7 @@ Build from source:
 
 ```bash
 git clone https://github.com/macedot/modelrouter.git
-cd ModelRouter
+cd modelrouter
 make build
 make install
 ```
@@ -112,11 +112,11 @@ Then ensure `~/.local/bin` is in your PATH:
 
 ## ⚙️ Configuration
 
-Create `~/.config/ModelRouter/ModelRouter.json`:
+Create `~/.config/modelrouter/modelrouter.json`:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/macedot/modelrouter/master/ModelRouter.schema.json",
+  "$schema": "https://raw.githubusercontent.com/macedot/modelrouter/master/modelrouter.schema.json",
   "server": {
     "port": 12345,
     "host": "localhost"
@@ -205,10 +205,10 @@ Create `~/.config/ModelRouter/ModelRouter.json`:
 
 ### `serve` (default)
 
-Start the ModelRouter server:
+Start the modelrouter server:
 
 ```bash
-./ModelRouter serve [--config <path>]
+./modelrouter serve [--config <path>]
 ```
 
 ### `models`
@@ -216,7 +216,7 @@ Start the ModelRouter server:
 List available models:
 
 ```bash
-./ModelRouter models [--json]
+./modelrouter models [--json]
 ```
 
 **Example output:**
@@ -237,7 +237,7 @@ Available models:
 Find and validate config file:
 
 ```bash
-./ModelRouter config
+./modelrouter config
 ```
 
 Outputs the config file path if valid. Only prints errors if validation fails.
@@ -247,7 +247,7 @@ Outputs the config file path if valid. Only prints errors if validation fails.
 Benchmark models by submitting prompts:
 
 ```bash
-./ModelRouter bench -prompt <file> [-scope <mode>] [-stream]
+./modelrouter bench -prompt <file> [-scope <mode>] [-stream]
 ```
 
 **Options:**
@@ -266,10 +266,10 @@ Benchmark models by submitting prompts:
 echo "What is the capital of France?" > prompt.txt
 
 # Benchmark application models
-./ModelRouter bench -prompt prompt.txt -scope application
+./modelrouter bench -prompt prompt.txt -scope application
 
 # Benchmark all provider models with streaming
-./ModelRouter bench -prompt prompt.txt -scope providers -stream
+./modelrouter bench -prompt prompt.txt -scope providers -stream
 ```
 
 **Output includes:**
@@ -282,11 +282,11 @@ echo "What is the capital of France?" > prompt.txt
 
 ## 🔌 API Endpoints
 
-### ModelRouter Endpoints
+### modelrouter Endpoints
 
-| Endpoint | Method | Description              |
-| ------- | ------ | ---------------------- |
-| `/models` | GET  | List our models        |
+| Endpoint  | Method | Description     |
+| --------- | ------ | --------------- |
+| `/models` | GET    | List our models |
 
 ### OpenAI-Compatible Endpoints
 
@@ -296,7 +296,7 @@ echo "What is the capital of France?" > prompt.txt
 | `/v1/chat/completions` | POST   | Chat completion (SSE streaming supported)     |
 | `/v1/completions`      | POST   | Text completion (legacy, streaming supported) |
 | `/v1/embeddings`       | POST   | Create embeddings                             |
-| `/v1/moderations`      | POST   | Content moderation                           |
+| `/v1/moderations`      | POST   | Content moderation                            |
 
 ### Anthropic-Compatible Endpoints
 
@@ -315,11 +315,11 @@ echo "What is the capital of France?" > prompt.txt
 
 ## 🔄 How It Works
 
-ModelRouter acts as an intelligent reverse proxy:
+modelrouter acts as an intelligent reverse proxy:
 
 ```
 ┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Client    │────▶│  ModelRouter    │────▶│ Provider 1      │
+│   Client    │────▶│  modelrouter    │────▶│ Provider 1      │
 │ (OpenAI SDK)│     │  (Proxy/Conv)   │     │ (OpenAI/Anthro) │
 └─────────────┘     └─────────────────┘     └─────────────────┘
                               │
@@ -344,7 +344,7 @@ ModelRouter acts as an intelligent reverse proxy:
 
 ```bash
 # Start the server
-./ModelRouter
+./modelrouter
 
 # In another terminal, use OpenAI-compatible endpoints:
 curl http://localhost:12345/v1/models

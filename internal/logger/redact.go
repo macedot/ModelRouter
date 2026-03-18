@@ -1,4 +1,4 @@
-// Package logger provides structured logging for ModelRouter.
+// Package logger provides structured logging for modelrouter.
 package logger
 
 import (

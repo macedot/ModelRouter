@@ -1,5 +1,5 @@
 #!/bin/sh
-# This script installs ModelRouter on Linux
+# This script installs modelrouter on Linux
 # It detects OS and architecture, downloads the binary, and installs it to ~/.local/bin
 
 set -eu
@@ -71,29 +71,29 @@ if [ -n "$MODELROUTER_VERSION" ]; then
 fi
 
 # Download URL
-DOWNLOAD_URL="https://github.com/macedot/modelrouter/releases/download/${VERSION}/ModelRouter-linux-${ARCH}"
+DOWNLOAD_URL="https://github.com/macedot/modelrouter/releases/download/${VERSION}/modelrouter-linux-${ARCH}"
 
 # Download binary
-info "Downloading ModelRouter ${VERSION} for ${ARCH}..."
-if ! curl -fsSL --progress-bar -o "$INSTALL_DIR/ModelRouter" "$DOWNLOAD_URL"; then
-    error "Failed to download ModelRouter"
+info "Downloading modelrouter ${VERSION} for ${ARCH}..."
+if ! curl -fsSL --progress-bar -o "$INSTALL_DIR/modelrouter" "$DOWNLOAD_URL"; then
+    error "Failed to download modelrouter"
 fi
 
 # Make executable
-chmod +x "$INSTALL_DIR/ModelRouter"
+chmod +x "$INSTALL_DIR/modelrouter"
 
 # Create systemd service (optional, for user-level service)
 if [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user" ]; then
     info "Creating user systemd service..."
     mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-    cat <<EOF > "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/ModelRouter.service"
+    cat <<EOF > "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/modelrouter.service"
 [Unit]
-Description=ModelRouter API proxy server
+Description=modelrouter API proxy server
 After=network.target.wants network-online.target
 
 [Service]
 Type=simple
-ExecStart=$INSTALL_DIR/ModelRouter
+ExecStart=$INSTALL_DIR/modelrouter
 Restart=on-failure
 RestartSec=3
 
@@ -101,7 +101,7 @@ RestartSec=3
 WantedBy=default.target
 EOF
 
-    info "User systemd service created. Enable with: systemctl --user enable ModelRouter"
+    info "User systemd service created. Enable with: systemctl --user enable modelrouter"
 fi
 
 # Update README
@@ -111,19 +111,19 @@ info "Updating README..."
 echo ""
 info "Installation complete!"
 info ""
-info "ModelRouter has been installed to $INSTALL_DIR/ModelRouter"
+info "modelrouter has been installed to $INSTALL_DIR/modelrouter"
 info ""
 if [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user" ]; then
     info "To start the server:"
-    info "  systemctl --user start ModelRouter"
+    info "  systemctl --user start modelrouter"
     info ""
     info "To check status:"
-    info "  systemctl --user status ModelRouter"
+    info "  systemctl --user status modelrouter"
     info ""
     info "To start on login:"
-    info "  systemctl --user enable ModelRouter"
+    info "  systemctl --user enable modelrouter"
 fi
 info ""
 info "Make sure $INSTALL_DIR is in your PATH."
-info "Run 'ModelRouter' to start the server."
+info "Run 'modelrouter' to start the server."
 echo ""

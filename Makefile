@@ -1,7 +1,7 @@
 .PHONY: build test run clean install uninstall tag release help cover check generate docker-build docker-run
 
 # Variables
-BINARY_NAME=ModelRouter
+BINARY_NAME=modelrouter
 BUILD_DIR=.
 CMD_DIR=./cmd
 GO:=$(shell which go)
@@ -13,7 +13,7 @@ GIT_VERSION:=$(shell git describe --tags --always --dirty 2>/dev/null || echo "d
 
 # Default target
 help:
-	@echo "ModelRouter - OpenAI-compatible proxy server with multi-provider fallback"
+	@echo "modelrouter - OpenAI-compatible proxy server with multi-provider fallback"
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""

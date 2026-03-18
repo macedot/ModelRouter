@@ -1,6 +1,6 @@
 # Binaries
 *.log
-/ModelRouter
+/modelrouter
 
 # IDE files
 .idea/
@@ -22,7 +22,7 @@ coverage.html
 .sisyphus/*
 .opencode
 .worktrees/
-ModelRouter.json
+modelrouter.json
 
 # Debug files
 .ModelRouter_debug/

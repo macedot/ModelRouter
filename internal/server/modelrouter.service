@@ -1,9 +1,9 @@
 [Unit]
-Description=ModelRouter - OpenAI and Anthropic compatible proxy server
+Description=modelrouter - OpenAI and Anthropic compatible proxy server
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/ModelRouter
+ExecStart=%h/.local/bin/modelrouter
 Restart=on-failure
 RestartSec=3
 
